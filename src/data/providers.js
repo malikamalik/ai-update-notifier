@@ -1,0 +1,92 @@
+export const PROVIDERS = {
+  openai: {
+    name: "OpenAI",
+    color: "#10a37f",
+    bgColor: "#10a37f15",
+    logo: "/logos/openai.svg",
+  },
+  anthropic: {
+    name: "Anthropic",
+    color: "#d97706",
+    bgColor: "#d9770615",
+    logo: "/logos/anthropic.svg",
+  },
+  gemini: {
+    name: "Gemini",
+    color: "#4285f4",
+    bgColor: "#4285f415",
+    logo: "/logos/googlegemini.svg",
+  },
+  google: {
+    name: "Google",
+    color: "#ea4335",
+    bgColor: "#ea433515",
+    logo: "/logos/google.svg",
+  },
+  deepseek: {
+    name: "DeepSeek",
+    color: "#1e40af",
+    bgColor: "#1e40af15",
+    logo: "/logos/deepseek.png",
+  },
+  kimi: {
+    name: "Kimi",
+    color: "#7c3aed",
+    bgColor: "#7c3aed15",
+    logo: "/logos/kimi.png",
+  },
+  meta: {
+    name: "Meta",
+    color: "#0668e1",
+    bgColor: "#0668e115",
+    logo: "/logos/meta.svg",
+  },
+  xai: {
+    name: "xAI",
+    color: "#000000",
+    bgColor: "#00000010",
+    logo: "/logos/x.svg",
+  },
+  mistral: {
+    name: "Mistral",
+    color: "#ff7000",
+    bgColor: "#ff700015",
+    logo: "/logos/mistral.svg",
+  },
+  microsoft: {
+    name: "Microsoft",
+    color: "#0078d4",
+    bgColor: "#0078d415",
+    logo: "/logos/microsoft.svg",
+  },
+  perplexity: {
+    name: "Perplexity",
+    color: "#20b2aa",
+    bgColor: "#20b2aa15",
+    logo: "/logos/perplexity.svg",
+  },
+  figma: {
+    name: "Figma",
+    color: "#f24e1e",
+    bgColor: "#f24e1e15",
+    logo: "/logos/figma.svg",
+  },
+  adobe: {
+    name: "Adobe",
+    color: "#ff0000",
+    bgColor: "#ff000015",
+    logo: "/logos/adobe.svg",
+  },
+  midjourney: {
+    name: "Midjourney",
+    color: "#5865f2",
+    bgColor: "#5865f215",
+    logo: "/logos/midjourney.png",
+  },
+  uxpilot: {
+    name: "UX Pilot",
+    color: "#06b6d4",
+    bgColor: "#06b6d415",
+    logo: "/logos/uxpilot.png",
+  },
+};
