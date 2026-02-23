@@ -2,11 +2,12 @@
 // which proxies Google News RSS server-side — no CORS, no third-party proxy
 const FETCH_TIMEOUT = 10000; // 10s timeout per request
 
-// 3 grouped queries — each uses OR between product names
+// Grouped queries — broad enough to catch articles, filtering handles noise
+// "Adobe Firefly" not "Firefly" (avoids rockets, insects, garden lights)
 const GROUPED_QUERIES = [
   '"ChatGPT" OR "Claude" OR "Gemini" OR "DeepSeek" OR "Kimi"',
-  '"Grok" OR "Mistral" OR "Copilot" OR "Perplexity" OR "Llama"',
-  '"Figma" OR "Firefly" OR "Midjourney" OR "UX Pilot"',
+  '"Grok" OR "Mistral" OR "GitHub Copilot" OR "Perplexity" OR "Llama"',
+  '"Figma" OR "Adobe Firefly" OR "Midjourney" OR "UX Pilot"',
 ];
 
 // Map article titles to providers by detecting product/company names
@@ -23,7 +24,7 @@ const PROVIDER_MATCHERS = [
   { provider: "microsoft", keywords: ["copilot", "microsoft ai"] },
   { provider: "perplexity", keywords: ["perplexity"] },
   { provider: "figma", keywords: ["figma"] },
-  { provider: "adobe", keywords: ["firefly", "adobe ai", "adobe firefly"] },
+  { provider: "adobe", keywords: ["adobe firefly", "adobe ai"] },
   { provider: "midjourney", keywords: ["midjourney"] },
   { provider: "uxpilot", keywords: ["ux pilot", "uxpilot"] },
 ];
@@ -36,57 +37,105 @@ function detectProvider(title) {
   return null;
 }
 
-// Words that signal a feature/product article
+// Words that signal a real feature/product/launch article
 const FEATURE_KEYWORDS = [
   "launch", "launches", "launched",
   "release", "releases", "released",
   "introduces", "introducing", "introduce",
   "rolls out", "rolling out", "rollout",
   "new feature", "new tool", "new model", "new capability",
-  "now available", "now supports",
+  "now available", "now supports", "now generally available",
   "announces", "announced", "announcing",
   "unveiled", "unveils", "unveiling",
   "debuts", "debuted", "debuting",
-  "adds", "added", "adding",
   "ships", "shipping", "shipped",
   "upgrade", "upgraded",
-  "update", "updated",
-  "beta", "preview", "general availability",
-  "v2", "v3", "v4", "v5", "v6", "v7", "v8",
+  "generally available",
+  "public preview",
   "integration", "plugin", "add-in",
-  "api", "sdk",
   "open source", "open-source",
-  "powered by", "built on",
+  "new version",
 ];
 
-// Words that signal non-feature noise (matched with word boundaries)
+// Reject patterns — anything financial, political, legal, scandal, opinion, or unrelated
 const REJECT_KEYWORDS = [
-  "lawsuit", "sued", "suing",
-  "ipo", "valuation", "funding round",
-  "stock price", "stock drop", "stock fall", "stock slide",
-  "shares drop", "shares fall", "shares slide",
-  "investor", "investors",
+  // Financial / market / stock
+  "stock", "shares", "ipo", "valuation", "market cap", "market share",
+  "funding", "funding round", "raise", "billion",
+  "investor", "investors", "investment",
+  "revenue", "earnings", "profit", "quarterly", "financial results",
+  "price target", "analyst", "rating", "sector perform",
+  "buy rating", "sell rating", "outperform", "underperform",
+  "NYSE", "NASDAQ", "hedge fund", "portfolio",
+  "Q1 ", "Q2 ", "Q3 ", "Q4 ",
+  "fiscal year", "guidance", "forecast",
+  "soars", "surges", "plunges", "tumbles", "climbs", "jumps",
+  "selloff", "sell-off", "rally", "rebound",
+  // Legal / political / government
+  "lawsuit", "sued", "suing", "class action",
+  "probe", "inquiry", "investigation", "indictment",
+  "antitrust", "monopoly", "regulation", "banned", "crackdown",
+  "pentagon", "military", "raid", "defense", "weapon", "troops",
+  "government", "congress", "democrat", "republican", "senator",
+  // Scandal / controversy / negative
+  "deepfake", "sexual", "porn", "nude", "non-consensual",
+  "controversy", "backlash", "criticized", "scandal",
+  "data breach", "data leak", "security breach",
+  "malware", "scam", "phishing",
+  "bug ", "bug,", "exposing", "exposed",
+  // Opinion / lifestyle / fluff
+  "opinion", "editorial", "column",
+  "dating", "soulmate", "relationship", "retirement",
+  "diet", "nutrition", "meal", "recipe",
+  "i quit", "i canceled", "i asked", "i use the", "i hacked",
+  "i signed up", "i'm fed up",
+  "tricks", "tips and tricks",
+  // Corporate / HR
   "layoff", "layoffs", "fired", "hiring freeze",
-  "regulation", "banned", "crackdown",
-  "controversy", "backlash", "criticized",
-  "opinion", "editorial",
-  "competitor", "rivalry",
-  "revenue", "earnings", "profit",
-  "acquisition", "acquires", "merger",
-  "security breach", "data leak", "data breach",
-  "antitrust", "monopoly",
+  "resign", "resignation", "stepping down",
+  "acquisition", "acquires", "merger", "buys",
+  // Unrelated "Firefly" matches
+  "rocket", "aerospace", "space launch", "spacecraft",
+  "garden", "patio", "decor", "waterproof",
+  "fireflies", "firefly festival", "firefly park",
+  "munition", "loitering",
+  // Unrelated "Gemini" matches
+  "gemini constellation", "gemini the twins", "zodiac",
+  // Price / cost / ads
+  "pricing", "subscription", "free tier", "pay for",
+  "how much", "worth the price", "worth the upgrade",
+  "advertising", "ads ", "ad-free", "CPM", "ad revenue",
+  // Meta / comparison / review articles
+  "vs.", "vs ", "versus", "compared to", "competitor", "rivalry",
+  "which one", "which is better", "vibe check", "first impressions",
+  "switch to", "moved everything",
+  // Government / policy deployments (not product features)
+  "state employees", "executive branch", "executive-branch",
+  "governor", "state workers", "government employees",
+  "massachusetts", "federal agency",
+  // Infrastructure / data center (not product features)
+  "data centre", "data center", "infrastructure",
+  // Vehicle / car integrations
+  "tesla", "model 3", "model y", "vehicle",
+  "dirty-talking", "dirty",
+  // Not about the product itself
+  "ahead of", "race with", "jolting race",
 ];
 
 const REJECT_PATTERNS = REJECT_KEYWORDS.map(
-  (kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i")
+  (kw) => new RegExp(`${kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i")
 );
 
 function isFeatureArticle(title, description) {
   const text = `${title} ${description}`.toLowerCase();
-  const hasReject = REJECT_PATTERNS.some((re) => re.test(text));
-  if (hasReject) return false;
-  const hasFeature = FEATURE_KEYWORDS.some((kw) => text.includes(kw));
-  return hasFeature;
+
+  // Must NOT match any reject pattern
+  if (REJECT_PATTERNS.some((re) => re.test(text))) return false;
+
+  // MUST match at least one feature keyword
+  if (!FEATURE_KEYWORDS.some((kw) => text.includes(kw))) return false;
+
+  return true;
 }
 
 function isWithinDays(dateStr, days) {
@@ -95,26 +144,10 @@ function isWithinDays(dateStr, days) {
   return diff >= 0 && diff < days * 24 * 60 * 60 * 1000;
 }
 
-function cleanHtml(html) {
-  if (!html) return "";
-  return html
-    .replace(/<[^>]*>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .trim()
-    .slice(0, 350);
-}
-
 function mapItemToUpdate(item, provider, index) {
   const headline = item.title?.replace(/ - .*$/, "").trim() || "Untitled";
   const source = item.source || item.title?.match(/ - (.+)$/)?.[1] || "";
-  // Server already strips HTML and formats date as YYYY-MM-DD
   const description = item.description || "";
-  // If description is just the title+source repeated, use a better fallback
   const summary =
     description && description !== `${headline} ${source}`
       ? description
@@ -163,7 +196,7 @@ async function fetchGroupedNews(query, groupIndex) {
     const results = [];
     for (const item of data.items || []) {
       const title = item.title || "";
-      const desc = cleanHtml(item.description || "");
+      const desc = item.description || "";
 
       // Detect which provider this article belongs to
       const provider = detectProvider(title);
@@ -175,7 +208,7 @@ async function fetchGroupedNews(query, groupIndex) {
       results.push(mapItemToUpdate(item, provider, results.length));
     }
 
-    console.log(`[NewsService] Group ${groupIndex}: ${results.length} articles`);
+    console.log(`[NewsService] Group ${groupIndex}: ${results.length} feature articles`);
     return results;
   } catch (err) {
     const reason = err.name === "AbortError" ? "timeout" : err.message;
@@ -195,7 +228,7 @@ export async function fetchAllNews() {
 
   // Sort by date descending
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
-  console.log(`[NewsService] Total: ${results.length} live articles`);
+  console.log(`[NewsService] Total: ${results.length} live feature articles`);
   return results;
 }
 
