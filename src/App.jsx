@@ -4,13 +4,34 @@ import { fetchAllNews, hasApiKey } from "./services/newsService";
 import UpdateCard from "./components/UpdateCard";
 import FilterBar from "./components/FilterBar";
 
-const REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes
+const REFRESH_INTERVAL = 10 * 60 * 1000; // 10 minutes
+const STALE_THRESHOLD = 5 * 60 * 1000; // 5 minutes — refresh when returning to tab if older
+const CACHE_KEY = "ai-update-notifier-live";
+
+// Load cached live updates from localStorage for instant display on page load
+function loadCachedUpdates() {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (!cached) return { updates: [], timestamp: null };
+    const { updates, timestamp } = JSON.parse(cached);
+    return { updates: updates || [], timestamp: timestamp ? new Date(timestamp) : null };
+  } catch {
+    return { updates: [], timestamp: null };
+  }
+}
+
+function saveCachedUpdates(updates) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ updates, timestamp: new Date().toISOString() }));
+  } catch { /* localStorage full or unavailable */ }
+}
 
 function App() {
   const [activeFilter, setActiveFilter] = useState("all");
-  const [liveUpdates, setLiveUpdates] = useState([]);
+  const cached = loadCachedUpdates();
+  const [liveUpdates, setLiveUpdates] = useState(cached.updates);
   const [loading, setLoading] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(cached.timestamp);
   const [apiConnected, setApiConnected] = useState(hasApiKey());
 
   const refreshNews = useCallback(async () => {
@@ -20,6 +41,7 @@ function App() {
       const news = await fetchAllNews();
       if (news.length > 0) {
         setLiveUpdates(news);
+        saveCachedUpdates(news);
         setApiConnected(true);
       } else {
         console.warn("[App] fetchAllNews returned 0 results");
@@ -34,12 +56,25 @@ function App() {
     }
   }, []);
 
-  // Fetch on mount + auto-refresh
+  // Fetch on mount + auto-refresh every 10 min
   useEffect(() => {
     refreshNews();
     const interval = setInterval(refreshNews, REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, [refreshNews]);
+
+  // Refresh when user returns to the tab (if data is stale)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const age = lastRefresh ? Date.now() - lastRefresh.getTime() : Infinity;
+      if (age > STALE_THRESHOLD) {
+        refreshNews();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshNews, lastRefresh]);
 
   // Merge live + static, deduplicate by headline similarity
   const allUpdates = [...liveUpdates, ...staticUpdates].reduce(
@@ -143,7 +178,7 @@ function App() {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
-              {" \u00b7 Auto-refreshes every 30 min"}
+              {" \u00b7 Auto-refreshes every 10 min"}
             </p>
           )}
         </div>
