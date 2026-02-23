@@ -76,18 +76,15 @@ function App() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refreshNews, lastRefresh]);
 
-  // Merge live + static, deduplicate by significant-word overlap
+  // Merge live + static, deduplicate by provider + first 50 chars
   const allUpdates = [...liveUpdates, ...staticUpdates].reduce(
     (acc, update) => {
-      const isDupe = acc.some((existing) => {
-        // Same provider + similar headline = duplicate
-        if (existing.provider !== update.provider) return false;
-        const a = existing.headline.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2);
-        const b = new Set(update.headline.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2));
-        if (a.length === 0 || b.size === 0) return false;
-        const overlap = a.filter(w => b.has(w)).length;
-        return overlap / Math.min(a.length, b.size) >= 0.5;
-      });
+      const isDupe = acc.some(
+        (existing) =>
+          existing.provider === update.provider &&
+          existing.headline.toLowerCase().slice(0, 50) ===
+            update.headline.toLowerCase().slice(0, 50)
+      );
       if (!isDupe) acc.push(update);
       return acc;
     },

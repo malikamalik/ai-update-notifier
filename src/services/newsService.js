@@ -217,40 +217,61 @@ async function fetchGroupedNews(query, groupIndex) {
   }
 }
 
-// Extract significant words from a headline (drop filler words)
-const STOP_WORDS = new Set([
-  "a", "an", "the", "is", "are", "was", "were", "in", "on", "at", "to",
-  "for", "of", "with", "and", "or", "its", "it", "by", "from", "as",
-  "that", "this", "can", "now", "new", "has", "have", "had", "will",
-  "be", "been", "all", "how", "what", "why", "more", "most", "also",
-  "just", "get", "gets", "got", "up", "out", "into", "says", "said",
-]);
+// Extract the core product topic from a headline for deduplication.
+// E.g. "Google launches Gemini 3.1 Pro to retake..." → "gemini 3.1 pro"
+//      "Anthropic Launches Claude Code Security..." → "claude code security"
+//      "Introducing Lockdown Mode and Elevated..."  → "lockdown mode"
+const PRODUCT_PATTERNS = [
+  // Versioned products: "Gemini 3.1 Pro", "Claude Sonnet 4.6", "GPT-5.2", "Kimi K2.5"
+  /\b(gemini\s+[\d.]+\s*\w*)/i,
+  /\b(claude\s+(?:sonnet|opus|haiku|code\s+security|code)\s*[\d.]*)/i,
+  /\b(gpt[-\s]?[\d.]+\w*)/i,
+  /\b(kimi\s+k?[\d.]+\w*)/i,
+  /\b(midjourney\s*[\d.]+)/i,
+  /\b(copilot\s+coding\s+agent)/i,
+  /\b(llama\s+[\d.]+\w*)/i,
+  /\b(grok\s+[\d.]+\w*)/i,
+  /\b(mistral\s+\w+\s*[\d.]*)/i,
+  /\b(deepseek[-\s]?\w+)/i,
+  // Named features without versions
+  /\b(claude\s+code\s+security)/i,
+  /\b(lockdown\s+mode)/i,
+  /\b(adobe\s+firefly\s*\w*)/i,
+  /\b(figma\s+(?:ai|make)\w*)/i,
+  /\b(perplexity\s+\w+\s+assistant)/i,
+];
 
-function getSignificantWords(headline) {
-  return headline
-    .toLowerCase()
-    .replace(/[^a-z0-9\s.]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
-}
-
-// Two headlines are about the same story if they share enough key words
-function isSameStory(a, b) {
-  const wordsA = getSignificantWords(a);
-  const wordsB = new Set(getSignificantWords(b));
-  if (wordsA.length === 0) return false;
-  const overlap = wordsA.filter((w) => wordsB.has(w)).length;
-  const similarity = overlap / Math.min(wordsA.length, wordsB.size);
-  return similarity >= 0.6;
+function extractProductTopic(headline) {
+  const h = headline.toLowerCase();
+  for (const re of PRODUCT_PATTERNS) {
+    const m = h.match(re);
+    if (m) return m[1].trim().replace(/\s+/g, " ");
+  }
+  return null;
 }
 
 function deduplicateArticles(articles) {
   const unique = [];
+  const seenTopics = new Set();
+
   for (const article of articles) {
-    const isDupe = unique.some((existing) =>
-      isSameStory(existing.headline, article.headline)
-    );
-    if (!isDupe) unique.push(article);
+    const topic = extractProductTopic(article.headline);
+
+    if (topic) {
+      // Same product topic + same provider = duplicate
+      const key = `${article.provider}::${topic}`;
+      if (seenTopics.has(key)) continue;
+      seenTopics.add(key);
+    } else {
+      // No product pattern found — fall back to first-50-chars check
+      const prefix = article.headline.toLowerCase().slice(0, 50);
+      const isDupe = unique.some(
+        (u) => u.headline.toLowerCase().slice(0, 50) === prefix
+      );
+      if (isDupe) continue;
+    }
+
+    unique.push(article);
   }
   return unique;
 }
