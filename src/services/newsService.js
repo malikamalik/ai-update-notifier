@@ -217,6 +217,44 @@ async function fetchGroupedNews(query, groupIndex) {
   }
 }
 
+// Extract significant words from a headline (drop filler words)
+const STOP_WORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "in", "on", "at", "to",
+  "for", "of", "with", "and", "or", "its", "it", "by", "from", "as",
+  "that", "this", "can", "now", "new", "has", "have", "had", "will",
+  "be", "been", "all", "how", "what", "why", "more", "most", "also",
+  "just", "get", "gets", "got", "up", "out", "into", "says", "said",
+]);
+
+function getSignificantWords(headline) {
+  return headline
+    .toLowerCase()
+    .replace(/[^a-z0-9\s.]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+// Two headlines are about the same story if they share enough key words
+function isSameStory(a, b) {
+  const wordsA = getSignificantWords(a);
+  const wordsB = new Set(getSignificantWords(b));
+  if (wordsA.length === 0) return false;
+  const overlap = wordsA.filter((w) => wordsB.has(w)).length;
+  const similarity = overlap / Math.min(wordsA.length, wordsB.size);
+  return similarity >= 0.6;
+}
+
+function deduplicateArticles(articles) {
+  const unique = [];
+  for (const article of articles) {
+    const isDupe = unique.some((existing) =>
+      isSameStory(existing.headline, article.headline)
+    );
+    if (!isDupe) unique.push(article);
+  }
+  return unique;
+}
+
 export async function fetchAllNews() {
   // Fetch all 3 groups in parallel — our own API, no rate limits
   const promises = GROUPED_QUERIES.map((query, i) =>
@@ -224,7 +262,7 @@ export async function fetchAllNews() {
   );
 
   const allResults = await Promise.all(promises);
-  const results = allResults.flat();
+  const results = deduplicateArticles(allResults.flat());
 
   // Sort by date descending
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
