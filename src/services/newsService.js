@@ -1,27 +1,41 @@
 // Uses Google News RSS (free, no API key) via rss2json.com (free CORS proxy)
 const RSS2JSON_URL = "https://api.rss2json.com/v1/api.json";
+const FETCH_TIMEOUT = 8000; // 8s timeout per request — never hang forever
 
-// Short, focused queries: product name AND'd with action verbs via Google search syntax
-// Format: "product" "verb1" OR "verb2" — Google reads as: product AND (verb1 OR verb2)
-const VERBS = '"launches"+OR+"announces"+OR+"rolls out"+OR+"releases"+OR+"unveils"+OR+"new feature"';
+// 3 grouped queries instead of 15 individual ones (avoids rss2json.com rate limits)
+// Each query uses OR between product names — Google News returns top 10 most relevant
+const GROUPED_QUERIES = [
+  '"ChatGPT" OR "Claude" OR "Gemini" OR "DeepSeek" OR "Kimi"',
+  '"Grok" OR "Mistral" OR "Copilot" OR "Perplexity" OR "Llama"',
+  '"Figma" OR "Firefly" OR "Midjourney" OR "UX Pilot"',
+];
 
-const PROVIDER_QUERIES = {
-  openai: `"ChatGPT"+${VERBS}`,
-  anthropic: `"Claude"+${VERBS}`,
-  gemini: `"Gemini"+${VERBS}+OR+"new model"`,
-  google: `"Google AI"+${VERBS}`,
-  deepseek: `"DeepSeek"+${VERBS}+OR+"new model"`,
-  kimi: `"Kimi"+${VERBS}`,
-  meta: `"Llama"+${VERBS}+OR+"new model"`,
-  xai: `"Grok"+${VERBS}`,
-  mistral: `"Mistral"+${VERBS}+OR+"new model"`,
-  microsoft: `"Copilot"+${VERBS}`,
-  perplexity: `"Perplexity"+${VERBS}`,
-  figma: `"Figma"+${VERBS}+OR+"new tool"`,
-  adobe: `"Firefly"+${VERBS}`,
-  midjourney: `"Midjourney"+${VERBS}+OR+"new version"`,
-  uxpilot: `"UX Pilot"+${VERBS}`,
-};
+// Map article titles to providers by detecting product/company names
+const PROVIDER_MATCHERS = [
+  { provider: "openai", keywords: ["chatgpt", "openai", "gpt-5", "gpt-4", "codex", "dall-e"] },
+  { provider: "anthropic", keywords: ["claude", "anthropic"] },
+  { provider: "gemini", keywords: ["gemini"] },
+  { provider: "google", keywords: ["google ai", "google deepmind"] },
+  { provider: "deepseek", keywords: ["deepseek"] },
+  { provider: "kimi", keywords: ["kimi", "moonshot ai", "moonshot"] },
+  { provider: "meta", keywords: ["llama", "meta ai"] },
+  { provider: "xai", keywords: ["grok", "xai", "x.ai"] },
+  { provider: "mistral", keywords: ["mistral"] },
+  { provider: "microsoft", keywords: ["copilot", "microsoft ai"] },
+  { provider: "perplexity", keywords: ["perplexity"] },
+  { provider: "figma", keywords: ["figma"] },
+  { provider: "adobe", keywords: ["firefly", "adobe ai", "adobe firefly"] },
+  { provider: "midjourney", keywords: ["midjourney"] },
+  { provider: "uxpilot", keywords: ["ux pilot", "uxpilot"] },
+];
+
+function detectProvider(title) {
+  const t = title.toLowerCase();
+  for (const { provider, keywords } of PROVIDER_MATCHERS) {
+    if (keywords.some((kw) => t.includes(kw))) return provider;
+  }
+  return null;
+}
 
 // Words that signal a feature/product article
 const FEATURE_KEYWORDS = [
@@ -46,7 +60,7 @@ const FEATURE_KEYWORDS = [
   "powered by", "built on",
 ];
 
-// Words that signal non-feature noise — reject these (matched with word boundaries)
+// Words that signal non-feature noise (matched with word boundaries)
 const REJECT_KEYWORDS = [
   "lawsuit", "sued", "suing",
   "ipo", "valuation", "funding round",
@@ -64,19 +78,14 @@ const REJECT_KEYWORDS = [
   "antitrust", "monopoly",
 ];
 
-// Pre-build regex patterns for word-boundary matching (avoids substring false positives)
 const REJECT_PATTERNS = REJECT_KEYWORDS.map(
   (kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i")
 );
 
 function isFeatureArticle(title, description) {
   const text = `${title} ${description}`.toLowerCase();
-
-  // Reject if it matches noise keywords (word-boundary match to avoid "hack" matching "Hacker News" etc.)
   const hasReject = REJECT_PATTERNS.some((re) => re.test(text));
   if (hasReject) return false;
-
-  // Accept if it matches feature keywords
   const hasFeature = FEATURE_KEYWORDS.some((kw) => text.includes(kw));
   return hasFeature;
 }
@@ -118,58 +127,66 @@ function mapItemToUpdate(item, provider, index) {
   };
 }
 
-export async function fetchProviderNews(provider) {
-  const query = PROVIDER_QUERIES[provider];
-  if (!query) return [];
+// Fetch with timeout so the spinner never hangs
+function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
+async function fetchGroupedNews(query, groupIndex) {
   const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:14d&hl=en-US&gl=US&ceid=US:en`;
 
   try {
-    const res = await fetch(
-      `${RSS2JSON_URL}?rss_url=${encodeURIComponent(googleRssUrl)}`
+    const res = await fetchWithTimeout(
+      `${RSS2JSON_URL}?rss_url=${encodeURIComponent(googleRssUrl)}`,
+      FETCH_TIMEOUT
     );
     if (!res.ok) {
-      console.warn(`[NewsService] ${provider}: HTTP ${res.status}`);
+      console.warn(`[NewsService] Group ${groupIndex}: HTTP ${res.status}`);
       return [];
     }
 
     const data = await res.json();
     if (data.status !== "ok") {
-      console.warn(`[NewsService] ${provider}: API status "${data.status}"`, data.message || "");
+      console.warn(`[NewsService] Group ${groupIndex}: API "${data.status}"`, data.message || "");
       return [];
     }
 
-    // Filter to feature-only articles, then take top 2
-    const featureArticles = (data.items || []).filter((item) => {
+    const results = [];
+    for (const item of data.items || []) {
       const title = item.title || "";
       const desc = cleanHtml(item.description || item.content || "");
-      return isFeatureArticle(title, desc);
-    });
 
-    return featureArticles
-      .slice(0, 2)
-      .map((item, i) => mapItemToUpdate(item, provider, i));
+      // Detect which provider this article belongs to
+      const provider = detectProvider(title);
+      if (!provider) continue;
+
+      // Filter to feature articles only
+      if (!isFeatureArticle(title, desc)) continue;
+
+      results.push(mapItemToUpdate(item, provider, results.length));
+    }
+
+    return results;
   } catch (err) {
-    console.warn(`[NewsService] ${provider}: fetch failed —`, err.message);
+    const reason = err.name === "AbortError" ? "timeout" : err.message;
+    console.warn(`[NewsService] Group ${groupIndex}: ${reason}`);
     return [];
   }
 }
 
 export async function fetchAllNews() {
-  const providers = Object.keys(PROVIDER_QUERIES);
   const results = [];
-  const batchSize = 2;
 
-  for (let i = 0; i < providers.length; i += batchSize) {
-    const batch = providers.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map((p) => fetchProviderNews(p))
-    );
-    results.push(...batchResults.flat());
+  // Fetch 3 grouped queries sequentially with 3s delay between each
+  // This makes only 3 requests total (vs 15 before) — no rate limiting
+  for (let i = 0; i < GROUPED_QUERIES.length; i++) {
+    const groupResults = await fetchGroupedNews(GROUPED_QUERIES[i], i + 1);
+    results.push(...groupResults);
 
-    // 2.5s delay between batches — rss2json.com free tier needs ~1 req/sec max
-    if (i + batchSize < providers.length) {
-      await new Promise((r) => setTimeout(r, 2500));
+    if (i < GROUPED_QUERIES.length - 1) {
+      await new Promise((r) => setTimeout(r, 3000));
     }
   }
 
