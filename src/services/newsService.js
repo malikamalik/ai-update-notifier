@@ -1,23 +1,25 @@
 // Uses Google News RSS (free, no API key) via rss2json.com (free CORS proxy)
 const RSS2JSON_URL = "https://api.rss2json.com/v1/api.json";
 
-// Tight queries: product name + "launches" / "rolls out" / "introduces" / "new feature"
+// Common announcement verbs used across all queries
+const ACTION_VERBS = '+"launches"+OR+"announces"+OR+"rolls out"+OR+"releases"+OR+"introduces"+OR+"unveils"+OR+"debuts"+OR+"new feature"+OR+"new model"';
+
 const PROVIDER_QUERIES = {
-  openai: '"ChatGPT"+"launches"+OR+"rolls out"+OR+"new feature"+OR+"introduces"',
-  anthropic: '"Claude"+"launches"+OR+"rolls out"+OR+"new feature"+OR+"introduces"',
-  gemini: '"Gemini"+"launches"+OR+"rolls out"+OR+"new feature"+OR+"new model"',
-  google: '"Google AI"+"launches"+OR+"new feature"+OR+"introduces"',
-  deepseek: '"DeepSeek"+"launches"+OR+"releases"+OR+"new model"+OR+"new feature"',
-  kimi: '"Kimi"+OR+"Moonshot AI"+"launches"+OR+"releases"+OR+"new feature"',
-  meta: '"Llama"+"launches"+OR+"releases"+OR+"new model"+OR+"new feature"',
-  xai: '"Grok"+"launches"+OR+"new feature"+OR+"rolls out"+OR+"introduces"',
-  mistral: '"Mistral"+"launches"+OR+"releases"+OR+"new model"+OR+"new feature"',
-  microsoft: '"Copilot"+"launches"+OR+"new feature"+OR+"rolls out"+OR+"introduces"',
-  perplexity: '"Perplexity"+"launches"+OR+"new feature"+OR+"rolls out"',
-  figma: '"Figma"+"launches"+OR+"new feature"+OR+"new tool"+OR+"introduces"',
-  adobe: '"Firefly"+OR+"Adobe AI"+"launches"+OR+"new feature"+OR+"introduces"',
-  midjourney: '"Midjourney"+"launches"+OR+"new version"+OR+"new feature"+OR+"V7"+OR+"V8"',
-  uxpilot: '"UX Pilot"+"launches"+OR+"new feature"+OR+"introduces"',
+  openai: `"ChatGPT"+OR+"OpenAI"${ACTION_VERBS}`,
+  anthropic: `"Claude"+OR+"Anthropic"${ACTION_VERBS}`,
+  gemini: `"Gemini"+OR+"Google AI"${ACTION_VERBS}`,
+  google: `"Google AI"${ACTION_VERBS}`,
+  deepseek: `"DeepSeek"${ACTION_VERBS}`,
+  kimi: `"Kimi"+OR+"Moonshot AI"${ACTION_VERBS}`,
+  meta: `"Llama"+OR+"Meta AI"${ACTION_VERBS}`,
+  xai: `"Grok"+OR+"xAI"${ACTION_VERBS}`,
+  mistral: `"Mistral"${ACTION_VERBS}`,
+  microsoft: `"Copilot"+OR+"Microsoft AI"${ACTION_VERBS}`,
+  perplexity: `"Perplexity"${ACTION_VERBS}`,
+  figma: `"Figma"${ACTION_VERBS}+OR+"new tool"`,
+  adobe: `"Firefly"+OR+"Adobe AI"${ACTION_VERBS}`,
+  midjourney: `"Midjourney"${ACTION_VERBS}+OR+"new version"+OR+"V7"+OR+"V8"`,
+  uxpilot: `"UX Pilot"${ACTION_VERBS}`,
 };
 
 // Words that signal a feature/product article
@@ -26,40 +28,51 @@ const FEATURE_KEYWORDS = [
   "release", "releases", "released",
   "introduces", "introducing", "introduce",
   "rolls out", "rolling out", "rollout",
-  "new feature", "new tool", "new model",
+  "new feature", "new tool", "new model", "new capability",
   "now available", "now supports",
-  "announces", "unveiled", "unveils",
+  "announces", "announced", "announcing",
+  "unveiled", "unveils", "unveiling",
+  "debuts", "debuted", "debuting",
   "adds", "added", "adding",
-  "ships", "shipping",
+  "ships", "shipping", "shipped",
   "upgrade", "upgraded",
   "update", "updated",
-  "beta", "preview",
+  "beta", "preview", "general availability",
   "v2", "v3", "v4", "v5", "v6", "v7", "v8",
   "integration", "plugin", "add-in",
   "api", "sdk",
+  "open source", "open-source",
+  "powered by", "built on",
 ];
 
-// Words that signal non-feature noise — reject these
+// Words that signal non-feature noise — reject these (matched with word boundaries)
 const REJECT_KEYWORDS = [
   "lawsuit", "sued", "suing",
-  "ipo", "valuation", "funding", "raises",
-  "stock", "shares", "investor",
-  "layoff", "fired", "hiring freeze",
-  "regulation", "ban", "banned",
+  "ipo", "valuation", "funding round",
+  "stock price", "stock drop", "stock fall", "stock slide",
+  "shares drop", "shares fall", "shares slide",
+  "investor", "investors",
+  "layoff", "layoffs", "fired", "hiring freeze",
+  "regulation", "banned", "crackdown",
   "controversy", "backlash", "criticized",
   "opinion", "editorial",
   "competitor", "rivalry",
   "revenue", "earnings", "profit",
   "acquisition", "acquires", "merger",
-  "security breach", "hack", "data leak",
+  "security breach", "data leak", "data breach",
   "antitrust", "monopoly",
 ];
+
+// Pre-build regex patterns for word-boundary matching (avoids substring false positives)
+const REJECT_PATTERNS = REJECT_KEYWORDS.map(
+  (kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i")
+);
 
 function isFeatureArticle(title, description) {
   const text = `${title} ${description}`.toLowerCase();
 
-  // Reject if it matches noise keywords
-  const hasReject = REJECT_KEYWORDS.some((kw) => text.includes(kw));
+  // Reject if it matches noise keywords (word-boundary match to avoid "hack" matching "Hacker News" etc.)
+  const hasReject = REJECT_PATTERNS.some((re) => re.test(text));
   if (hasReject) return false;
 
   // Accept if it matches feature keywords
