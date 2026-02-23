@@ -1,7 +1,6 @@
 // Vercel serverless function — fetches Google News RSS server-side
 // No CORS issues, no third-party proxy, no rate limits
 export default async function handler(req, res) {
-  // Allow requests from our frontend
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET");
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
@@ -27,8 +26,6 @@ export default async function handler(req, res) {
     }
 
     const xml = await response.text();
-
-    // Parse RSS XML into JSON items
     const items = parseRssXml(xml);
 
     return res.status(200).json({ status: "ok", items });
@@ -46,11 +43,14 @@ function parseRssXml(xml) {
 
   while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1];
+    const rawDesc = extractTag(block, "description");
+    const rawPubDate = extractTag(block, "pubDate");
+
     items.push({
       title: extractTag(block, "title"),
       link: extractTag(block, "link"),
-      description: extractTag(block, "description"),
-      pubDate: extractTag(block, "pubDate"),
+      description: stripHtml(rawDesc),
+      pubDate: formatDate(rawPubDate),
       source: extractTagAttr(block, "source"),
     });
   }
@@ -72,8 +72,36 @@ function extractTag(xml, tag) {
 }
 
 function extractTagAttr(xml, tag) {
-  // For <source url="...">Text</source>
   const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`);
   const match = xml.match(re);
   return match ? match[1].trim() : "";
+}
+
+// Strip all HTML (both raw tags and HTML-entity-encoded tags) from description
+function stripHtml(html) {
+  if (!html) return "";
+  return html
+    // Decode HTML entities first
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    // Now strip all HTML tags
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Convert RFC 2822 date ("Wed, 18 Feb 2026 03:37:44 GMT") to ISO date ("2026-02-18")
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toISOString().split("T")[0];
+  } catch {
+    return dateStr;
+  }
 }

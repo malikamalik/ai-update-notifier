@@ -110,18 +110,24 @@ function cleanHtml(html) {
 }
 
 function mapItemToUpdate(item, provider, index) {
-  const description = cleanHtml(item.description || "");
+  const headline = item.title?.replace(/ - .*$/, "").trim() || "Untitled";
+  const source = item.source || item.title?.match(/ - (.+)$/)?.[1] || "";
+  // Server already strips HTML and formats date as YYYY-MM-DD
+  const description = item.description || "";
+  // If description is just the title+source repeated, use a better fallback
+  const summary =
+    description && description !== `${headline} ${source}`
+      ? description
+      : `Click to read the full article from ${source || "the source"}.`;
   return {
     id: `live-${provider}-${index}-${Date.now()}`,
     provider,
-    headline: item.title?.replace(/ - .*$/, "").trim() || "Untitled",
-    summary: description || "Click to read the full article.",
-    date:
-      item.pubDate?.split(" ")[0] ||
-      new Date().toISOString().split("T")[0],
+    headline,
+    summary,
+    date: item.pubDate || new Date().toISOString().split("T")[0],
     isNew: isWithinDays(item.pubDate, 3),
     link: item.link || "",
-    source: item.source || item.title?.match(/ - (.+)$/)?.[1] || "",
+    source,
     isLive: true,
   };
 }
