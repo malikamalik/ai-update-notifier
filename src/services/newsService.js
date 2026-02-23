@@ -1,9 +1,8 @@
-// Uses Google News RSS (free, no API key) via rss2json.com (free CORS proxy)
-const RSS2JSON_URL = "https://api.rss2json.com/v1/api.json";
-const FETCH_TIMEOUT = 8000; // 8s timeout per request — never hang forever
+// Fetches AI news via our own Vercel serverless function (/api/rss)
+// which proxies Google News RSS server-side — no CORS, no third-party proxy
+const FETCH_TIMEOUT = 10000; // 10s timeout per request
 
-// 3 grouped queries instead of 15 individual ones (avoids rss2json.com rate limits)
-// Each query uses OR between product names — Google News returns top 10 most relevant
+// 3 grouped queries — each uses OR between product names
 const GROUPED_QUERIES = [
   '"ChatGPT" OR "Claude" OR "Gemini" OR "DeepSeek" OR "Kimi"',
   '"Grok" OR "Mistral" OR "Copilot" OR "Perplexity" OR "Llama"',
@@ -111,7 +110,7 @@ function cleanHtml(html) {
 }
 
 function mapItemToUpdate(item, provider, index) {
-  const description = cleanHtml(item.description || item.content || "");
+  const description = cleanHtml(item.description || "");
   return {
     id: `live-${provider}-${index}-${Date.now()}`,
     provider,
@@ -122,7 +121,7 @@ function mapItemToUpdate(item, provider, index) {
       new Date().toISOString().split("T")[0],
     isNew: isWithinDays(item.pubDate, 3),
     link: item.link || "",
-    source: item.title?.match(/ - (.+)$/)?.[1] || "",
+    source: item.source || item.title?.match(/ - (.+)$/)?.[1] || "",
     isLive: true,
   };
 }
@@ -134,14 +133,16 @@ function fetchWithTimeout(url, ms) {
   return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-async function fetchGroupedNews(query, groupIndex) {
-  const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}+when:14d&hl=en-US&gl=US&ceid=US:en`;
+// Build the API URL — works in both dev (localhost) and prod (Vercel)
+function getApiUrl(query) {
+  const base = import.meta.env.DEV ? "http://localhost:3000" : "";
+  return `${base}/api/rss?q=${encodeURIComponent(query)}`;
+}
 
+async function fetchGroupedNews(query, groupIndex) {
   try {
-    const res = await fetchWithTimeout(
-      `${RSS2JSON_URL}?rss_url=${encodeURIComponent(googleRssUrl)}`,
-      FETCH_TIMEOUT
-    );
+    const res = await fetchWithTimeout(getApiUrl(query), FETCH_TIMEOUT);
+
     if (!res.ok) {
       console.warn(`[NewsService] Group ${groupIndex}: HTTP ${res.status}`);
       return [];
@@ -149,14 +150,14 @@ async function fetchGroupedNews(query, groupIndex) {
 
     const data = await res.json();
     if (data.status !== "ok") {
-      console.warn(`[NewsService] Group ${groupIndex}: API "${data.status}"`, data.message || "");
+      console.warn(`[NewsService] Group ${groupIndex}: API error`, data.error || "");
       return [];
     }
 
     const results = [];
     for (const item of data.items || []) {
       const title = item.title || "";
-      const desc = cleanHtml(item.description || item.content || "");
+      const desc = cleanHtml(item.description || "");
 
       // Detect which provider this article belongs to
       const provider = detectProvider(title);
@@ -168,6 +169,7 @@ async function fetchGroupedNews(query, groupIndex) {
       results.push(mapItemToUpdate(item, provider, results.length));
     }
 
+    console.log(`[NewsService] Group ${groupIndex}: ${results.length} articles`);
     return results;
   } catch (err) {
     const reason = err.name === "AbortError" ? "timeout" : err.message;
@@ -177,21 +179,17 @@ async function fetchGroupedNews(query, groupIndex) {
 }
 
 export async function fetchAllNews() {
-  const results = [];
+  // Fetch all 3 groups in parallel — our own API, no rate limits
+  const promises = GROUPED_QUERIES.map((query, i) =>
+    fetchGroupedNews(query, i + 1)
+  );
 
-  // Fetch 3 grouped queries sequentially with 3s delay between each
-  // This makes only 3 requests total (vs 15 before) — no rate limiting
-  for (let i = 0; i < GROUPED_QUERIES.length; i++) {
-    const groupResults = await fetchGroupedNews(GROUPED_QUERIES[i], i + 1);
-    results.push(...groupResults);
-
-    if (i < GROUPED_QUERIES.length - 1) {
-      await new Promise((r) => setTimeout(r, 3000));
-    }
-  }
+  const allResults = await Promise.all(promises);
+  const results = allResults.flat();
 
   // Sort by date descending
   results.sort((a, b) => new Date(b.date) - new Date(a.date));
+  console.log(`[NewsService] Total: ${results.length} live articles`);
   return results;
 }
 
