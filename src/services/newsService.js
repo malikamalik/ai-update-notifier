@@ -1,25 +1,26 @@
 // Uses Google News RSS (free, no API key) via rss2json.com (free CORS proxy)
 const RSS2JSON_URL = "https://api.rss2json.com/v1/api.json";
 
-// Common announcement verbs used across all queries
-const ACTION_VERBS = '+"launches"+OR+"announces"+OR+"rolls out"+OR+"releases"+OR+"introduces"+OR+"unveils"+OR+"debuts"+OR+"new feature"+OR+"new model"';
+// Short, focused queries: product name AND'd with action verbs via Google search syntax
+// Format: "product" "verb1" OR "verb2" — Google reads as: product AND (verb1 OR verb2)
+const VERBS = '"launches"+OR+"announces"+OR+"rolls out"+OR+"releases"+OR+"unveils"+OR+"new feature"';
 
 const PROVIDER_QUERIES = {
-  openai: `"ChatGPT"+OR+"OpenAI"${ACTION_VERBS}`,
-  anthropic: `"Claude"+OR+"Anthropic"${ACTION_VERBS}`,
-  gemini: `"Gemini"+OR+"Google AI"${ACTION_VERBS}`,
-  google: `"Google AI"${ACTION_VERBS}`,
-  deepseek: `"DeepSeek"${ACTION_VERBS}`,
-  kimi: `"Kimi"+OR+"Moonshot AI"${ACTION_VERBS}`,
-  meta: `"Llama"+OR+"Meta AI"${ACTION_VERBS}`,
-  xai: `"Grok"+OR+"xAI"${ACTION_VERBS}`,
-  mistral: `"Mistral"${ACTION_VERBS}`,
-  microsoft: `"Copilot"+OR+"Microsoft AI"${ACTION_VERBS}`,
-  perplexity: `"Perplexity"${ACTION_VERBS}`,
-  figma: `"Figma"${ACTION_VERBS}+OR+"new tool"`,
-  adobe: `"Firefly"+OR+"Adobe AI"${ACTION_VERBS}`,
-  midjourney: `"Midjourney"${ACTION_VERBS}+OR+"new version"+OR+"V7"+OR+"V8"`,
-  uxpilot: `"UX Pilot"${ACTION_VERBS}`,
+  openai: `"ChatGPT"+${VERBS}`,
+  anthropic: `"Claude"+${VERBS}`,
+  gemini: `"Gemini"+${VERBS}+OR+"new model"`,
+  google: `"Google AI"+${VERBS}`,
+  deepseek: `"DeepSeek"+${VERBS}+OR+"new model"`,
+  kimi: `"Kimi"+${VERBS}`,
+  meta: `"Llama"+${VERBS}+OR+"new model"`,
+  xai: `"Grok"+${VERBS}`,
+  mistral: `"Mistral"+${VERBS}+OR+"new model"`,
+  microsoft: `"Copilot"+${VERBS}`,
+  perplexity: `"Perplexity"+${VERBS}`,
+  figma: `"Figma"+${VERBS}+OR+"new tool"`,
+  adobe: `"Firefly"+${VERBS}`,
+  midjourney: `"Midjourney"+${VERBS}+OR+"new version"`,
+  uxpilot: `"UX Pilot"+${VERBS}`,
 };
 
 // Words that signal a feature/product article
@@ -157,7 +158,7 @@ export async function fetchProviderNews(provider) {
 export async function fetchAllNews() {
   const providers = Object.keys(PROVIDER_QUERIES);
   const results = [];
-  const batchSize = 3;
+  const batchSize = 2;
 
   for (let i = 0; i < providers.length; i += batchSize) {
     const batch = providers.slice(i, i + batchSize);
@@ -166,9 +167,9 @@ export async function fetchAllNews() {
     );
     results.push(...batchResults.flat());
 
-    // Longer delay between batches to avoid rss2json.com rate limits
+    // 2.5s delay between batches — rss2json.com free tier needs ~1 req/sec max
     if (i + batchSize < providers.length) {
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 2500));
     }
   }
 
