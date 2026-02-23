@@ -21,10 +21,14 @@ function App() {
       if (news.length > 0) {
         setLiveUpdates(news);
         setApiConnected(true);
+      } else {
+        console.warn("[App] fetchAllNews returned 0 results");
+        setApiConnected(false);
       }
       setLastRefresh(new Date());
-    } catch {
-      // silently fall back to static data
+    } catch (err) {
+      console.warn("[App] refreshNews failed:", err.message);
+      setApiConnected(false);
     } finally {
       setLoading(false);
     }

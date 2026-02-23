@@ -47,7 +47,7 @@ const REJECT_KEYWORDS = [
   "layoff", "fired", "hiring freeze",
   "regulation", "ban", "banned",
   "controversy", "backlash", "criticized",
-  "opinion", "editorial", "review",
+  "opinion", "editorial",
   "competitor", "rivalry",
   "revenue", "earnings", "profit",
   "acquisition", "acquires", "merger",
@@ -114,10 +114,16 @@ export async function fetchProviderNews(provider) {
     const res = await fetch(
       `${RSS2JSON_URL}?rss_url=${encodeURIComponent(googleRssUrl)}`
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[NewsService] ${provider}: HTTP ${res.status}`);
+      return [];
+    }
 
     const data = await res.json();
-    if (data.status !== "ok") return [];
+    if (data.status !== "ok") {
+      console.warn(`[NewsService] ${provider}: API status "${data.status}"`, data.message || "");
+      return [];
+    }
 
     // Filter to feature-only articles, then take top 2
     const featureArticles = (data.items || []).filter((item) => {
@@ -129,7 +135,8 @@ export async function fetchProviderNews(provider) {
     return featureArticles
       .slice(0, 2)
       .map((item, i) => mapItemToUpdate(item, provider, i));
-  } catch {
+  } catch (err) {
+    console.warn(`[NewsService] ${provider}: fetch failed —`, err.message);
     return [];
   }
 }
@@ -137,7 +144,7 @@ export async function fetchProviderNews(provider) {
 export async function fetchAllNews() {
   const providers = Object.keys(PROVIDER_QUERIES);
   const results = [];
-  const batchSize = 5;
+  const batchSize = 3;
 
   for (let i = 0; i < providers.length; i += batchSize) {
     const batch = providers.slice(i, i + batchSize);
@@ -146,9 +153,9 @@ export async function fetchAllNews() {
     );
     results.push(...batchResults.flat());
 
-    // Small delay between batches
+    // Longer delay between batches to avoid rss2json.com rate limits
     if (i + batchSize < providers.length) {
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 1500));
     }
   }
 
