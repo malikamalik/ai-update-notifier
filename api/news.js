@@ -120,6 +120,14 @@ const REJECT_KEYWORDS = [
   // Vehicle
   "tesla", "model 3", "model y", "vehicle",
   "dirty-talking", "dirty",
+  // Anticipation / not actually released
+  "prepares to release", "prepares to launch", "preparing to release",
+  "plans to release", "plans to launch", "planning to launch",
+  "expected to release", "expected to launch", "set to release",
+  "about to release", "about to launch",
+  // Market reaction / sentiment
+  "trembles", "trembling", "shakes", "shaking",
+  "threatens", "threatening", "fears", "feared",
   // Noise
   "ahead of", "race with", "jolting race",
   "insurance marketplace", "workforce",
@@ -327,17 +335,17 @@ const JUNK_SUMMARY_PATTERNS = [
 ];
 
 function cleanSummary(summary, source) {
-  if (!summary || summary.length < 50) return `Read more on ${source}.`;
+  if (!summary || summary.length < 50) return null; // skip articles without real summaries
   // Strip trailing "The post ... appeared first on ..." patterns
   let cleaned = summary.replace(/\s*The post .* appeared first on .*$/i, "").trim();
-  if (!cleaned || cleaned.length < 50) return `Read more on ${source}.`;
+  if (!cleaned || cleaned.length < 50) return null;
   if (JUNK_SUMMARY_PATTERNS.some((re) => re.test(cleaned))) {
     // Try to salvage the first sentence only if it's not junk itself
     const firstSentence = cleaned.match(/^(.{40,}?[.!])\s/);
     if (firstSentence && !JUNK_SUMMARY_PATTERNS.some((re) => re.test(firstSentence[1]))) {
       return firstSentence[1];
     }
-    return `Read more on ${source}.`;
+    return null;
   }
   return cleaned;
 }
@@ -374,9 +382,11 @@ export default async function handler(req, res) {
         if (!isFeatureArticle(item.title, item.description)) continue;
 
         const headline = item.title.replace(/ - .*$/, "").trim();
+        const summary = cleanSummary(item.description, item.source);
+        if (!summary) continue; // skip articles without a meaningful summary
         articles.push({
           headline,
-          summary: cleanSummary(item.description, item.source),
+          summary,
           date: item.pubDate,
           link: item.link,
           source: item.source,
