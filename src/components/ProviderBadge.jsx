@@ -19,7 +19,7 @@ export default function ProviderBadge({ provider }) {
           src={info.logo}
           alt={info.name}
           className="w-4 h-4 object-contain"
-          style={isSvg ? { filter: `brightness(0) saturate(100%)` } : undefined}
+          style={undefined}
           onError={() => setImgError(true)}
         />
       ) : (
