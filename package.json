@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@extractus/article-extractor": "^8.0.20",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

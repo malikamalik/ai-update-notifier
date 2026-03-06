@@ -1,5 +1,6 @@
 // /api/news — fetches from Bing News RSS (which includes real article descriptions),
 // filters to feature-only articles, deduplicates, and returns enriched results.
+// Full article content is fetched on-demand via /api/article?url=...
 
 // Individual queries per provider — Bing doesn't support complex OR with quotes
 // All run in parallel from our own server, so speed is fine
@@ -349,6 +350,7 @@ function cleanSummary(summary, source) {
   }
   return cleaned;
 }
+
 
 // ── Main handler ────────────────────────────────────────────────────
 export default async function handler(req, res) {
