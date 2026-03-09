@@ -5,12 +5,12 @@ import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore/lite";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDbcTducgo39cIvbjRDLayAE22NYE0o6Bs",
-  authDomain: "myaicademy-client-app.firebaseapp.com",
-  projectId: "myaicademy-client-app",
-  storageBucket: "myaicademy-client-app.firebasestorage.app",
-  messagingSenderId: "350240447051",
-  appId: "1:350240447051:web:94d4091b4beb034e180bce",
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
