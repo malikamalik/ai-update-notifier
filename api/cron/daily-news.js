@@ -86,39 +86,49 @@ export default async function handler(req, res) {
     const extracted = enrichedArticles.filter((a) => a.fullText).length;
     console.log(`[cron] Extracted text for ${extracted}/${enrichedArticles.length} articles`);
 
-    // Step 4: Generate AI summaries (parallel, batches of 5)
+    // Step 4: Generate AI summaries (parallel, batches of 5) — no fallback to RSS
     if (timeRemaining() < 10000) {
-      console.log("[cron] Low time, writing without AI summaries");
-    } else {
-      const summaryResults = await processInBatches(enrichedArticles, BATCH_SIZE, async (article) => {
-        if (timeRemaining() < 5000) return article; // skip if running low
-        const inputText = article.fullText || article.summary; // fallback to RSS description
-        const aiSummary = await generateSummary(inputText, article.headline, article.link);
-        console.log(`[cron] Summary for "${article.headline.slice(0, 50)}..." → ${aiSummary ? aiSummary.length + " chars" : "FAILED"}`);
-        return { ...article, aiSummary };
-      });
+      console.log("[cron] Low time, skipping summary generation");
+      return res.status(200).json({ status: "ok", processed: 0, skipped: articles.length, reason: "timeout" });
+    }
 
-      // Merge AI summaries back
-      for (let i = 0; i < enrichedArticles.length; i++) {
-        const result = summaryResults[i];
-        if (result.status === "fulfilled" && result.value.aiSummary) {
-          enrichedArticles[i].aiSummary = result.value.aiSummary;
-        }
+    const summaryResults = await processInBatches(enrichedArticles, BATCH_SIZE, async (article) => {
+      if (timeRemaining() < 5000) return article; // skip if running low
+      if (!article.fullText) {
+        console.warn(`[cron] No extracted text for "${article.headline.slice(0, 50)}...", skipping summary`);
+        return article;
       }
+      const aiSummary = await generateSummary(article.fullText, article.headline, article.link);
+      console.log(`[cron] Summary for "${article.headline.slice(0, 50)}..." → ${aiSummary ? aiSummary.length + " chars" : "FAILED"}`);
+      return { ...article, aiSummary };
+    });
+
+    // Merge AI summaries back
+    for (let i = 0; i < enrichedArticles.length; i++) {
+      const result = summaryResults[i];
+      if (result.status === "fulfilled" && result.value.aiSummary) {
+        enrichedArticles[i].aiSummary = result.value.aiSummary;
+      }
+    }
+
+    // Only keep articles that got an AI summary — never store RSS descriptions
+    const readyArticles = enrichedArticles.filter((a) => a.aiSummary);
+    const dropped = enrichedArticles.length - readyArticles.length;
+    if (dropped > 0) {
+      console.warn(`[cron] Dropped ${dropped} articles without AI summary`);
     }
 
     // Step 5: Batch write to Firestore
     const batch = writeBatch(db);
     let processed = 0;
 
-    for (const article of enrichedArticles) {
+    for (const article of readyArticles) {
       const docId = urlHash(article.link);
       const ref = doc(db, "articles", docId);
       batch.set(ref, {
         url: article.link,
         headline: article.headline,
-        summary: article.aiSummary || article.summary, // AI summary with RSS fallback
-        rssSummary: article.summary,
+        summary: article.aiSummary,
         provider: article.provider,
         source: article.source || "",
         date: article.date || new Date().toISOString().split("T")[0],
@@ -134,6 +144,7 @@ export default async function handler(req, res) {
       status: "ok",
       processed,
       skipped: articles.length - newArticles.length,
+      dropped,
       elapsed: Date.now() - startTime,
     });
   } catch (err) {
