@@ -12,7 +12,7 @@ function fetchWithTimeout(url, ms) {
 
 function getApiUrl() {
   const base = import.meta.env.DEV ? "http://localhost:3000" : "";
-  return `${base}/api/news`;
+  return `${base}/api/articles`;
 }
 
 export async function fetchAllNews() {
