@@ -128,6 +128,7 @@ export default async function handler(req, res) {
       batch.set(ref, {
         url: article.link,
         headline: article.headline,
+        description: article.summary,
         summary: article.aiSummary,
         provider: article.provider,
         source: article.source || "",

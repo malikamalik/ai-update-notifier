@@ -43,6 +43,10 @@ export default function UpdateCard({ update }) {
         {update.headline}
       </h3>
 
+      {update.description && (
+        <p className="text-sm text-gray-500 italic mb-2">{update.description}</p>
+      )}
+
       <div className="text-sm text-gray-600 leading-relaxed mb-3">
         {update.summary.split("\n").map((line, i) => (
           <p key={i} className={line.startsWith("TL;DR:") ? "font-semibold text-gray-800 mb-1" : line.startsWith("•") ? "ml-2" : ""}>

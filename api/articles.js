@@ -32,6 +32,7 @@ export default async function handler(req, res) {
         id: d.id,
         provider: data.provider,
         headline: data.headline,
+        description: data.description || "",
         summary: data.summary,
         date: data.date,
         isNew: dateMs > 0 && now - dateMs < THREE_DAYS,
