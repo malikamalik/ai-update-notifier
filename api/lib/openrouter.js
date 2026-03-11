@@ -6,20 +6,17 @@ const TIMEOUT = 20000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000]; // exponential backoff
 
-const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to extract the key points from the given AI product article.
+const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to write a punchy TL;DR of the given AI product article.
 
 Rules:
-- Write EXACTLY 3-4 bullet points
-- Each bullet point should be 1-2 sentences, concise and factual
-- Start each bullet with "• " (bullet character followed by a space)
-- Point 1: What was launched/released/announced and by which company
-- Point 2: What the product/feature does or how it works
-- Point 3: Key technical details, numbers, or specifics
-- Point 4 (if applicable): Availability, pricing, or who can use it
+- Start with "TL;DR: " followed by a single concise sentence (max ~20 words) that captures the core news
+- Then add 2-3 short bullet points with key details, each starting with "• "
+- Each bullet should be a brief phrase or single sentence — punchy and scannable
+- Cover: what it is, why it matters, and any key numbers/availability
 - Be factual and specific. Include names, numbers, and details from the article
 - Do NOT start with "The article discusses..." or similar meta-phrasing. Jump straight into the facts
 - Do NOT include opinions or speculation
-- Do NOT use markdown formatting like ** or ## — just plain text bullets`;
+- Do NOT use markdown formatting like ** or ## — just plain text`;
 
 async function callOpenRouter(userContent, apiKey) {
   const controller = new AbortController();
@@ -53,13 +50,16 @@ async function callOpenRouter(userContent, apiKey) {
     const summary = data.choices?.[0]?.message?.content?.trim() || null;
     if (!summary) throw new Error("Empty response from model");
 
-    // Validate: must have bullet points
+    // Validate: must have TL;DR line and at least 2 bullets
+    const hasTldr = /^TL;DR:/im.test(summary);
     const bulletCount = (summary.match(/^[•\-\*]/gm) || []).length;
-    if (bulletCount < 3) {
-      console.warn(`[openrouter] Only ${bulletCount} bullets found, reformatting`);
+    if (!hasTldr || bulletCount < 2) {
+      console.warn(`[openrouter] Missing TL;DR or only ${bulletCount} bullets, reformatting`);
       const sentences = summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
-      if (sentences.length >= 3) {
-        return sentences.slice(0, 4).map((s) => `• ${s.replace(/^[•\-\*]\s*/, "")}`).join("\n");
+      if (sentences.length >= 2) {
+        const tldr = `TL;DR: ${sentences[0].replace(/^(TL;DR:\s*|[•\-\*]\s*)/i, "")}`;
+        const bullets = sentences.slice(1, 4).map((s) => `• ${s.replace(/^[•\-\*]\s*/, "")}`).join("\n");
+        return `${tldr}\n${bullets}`;
       }
     }
 
