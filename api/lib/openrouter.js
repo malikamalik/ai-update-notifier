@@ -6,17 +6,20 @@ const TIMEOUT = 20000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000]; // exponential backoff
 
-const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to write a detailed, informative summary of the given AI product article.
+const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to extract the key points from the given AI product article.
 
 Rules:
-- Write EXACTLY 2-3 paragraphs, separated by blank lines (two newlines between each paragraph)
-- Each paragraph should be 3-5 sentences long
-- Paragraph 1: What was launched/released/announced and by which company
-- Paragraph 2: Key details — what the product/feature does, technical specifics, how it works
-- Paragraph 3 (if applicable): Availability, pricing, who can use it, what platforms it's on
+- Write EXACTLY 3-4 bullet points
+- Each bullet point should be 1-2 sentences, concise and factual
+- Start each bullet with "• " (bullet character followed by a space)
+- Point 1: What was launched/released/announced and by which company
+- Point 2: What the product/feature does or how it works
+- Point 3: Key technical details, numbers, or specifics
+- Point 4 (if applicable): Availability, pricing, or who can use it
 - Be factual and specific. Include names, numbers, and details from the article
 - Do NOT start with "The article discusses..." or similar meta-phrasing. Jump straight into the facts
-- Do NOT include opinions or speculation`;
+- Do NOT include opinions or speculation
+- Do NOT use markdown formatting like ** or ## — just plain text bullets`;
 
 async function callOpenRouter(userContent, apiKey) {
   const controller = new AbortController();
@@ -36,7 +39,7 @@ async function callOpenRouter(userContent, apiKey) {
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent },
         ],
-        max_tokens: 800,
+        max_tokens: 400,
       }),
     });
     clearTimeout(timer);
@@ -50,13 +53,13 @@ async function callOpenRouter(userContent, apiKey) {
     const summary = data.choices?.[0]?.message?.content?.trim() || null;
     if (!summary) throw new Error("Empty response from model");
 
-    // Validate: must have at least 2 paragraphs (1+ blank line separator)
-    if (!summary.includes("\n\n")) {
-      console.warn("[openrouter] Summary missing paragraph breaks, reformatting");
-      const sentences = summary.split(/(?<=[.!?])\s+/);
-      if (sentences.length >= 4) {
-        const mid = Math.ceil(sentences.length / 2);
-        return sentences.slice(0, mid).join(" ") + "\n\n" + sentences.slice(mid).join(" ");
+    // Validate: must have bullet points
+    const bulletCount = (summary.match(/^[•\-\*]/gm) || []).length;
+    if (bulletCount < 3) {
+      console.warn(`[openrouter] Only ${bulletCount} bullets found, reformatting`);
+      const sentences = summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
+      if (sentences.length >= 3) {
+        return sentences.slice(0, 4).map((s) => `• ${s.replace(/^[•\-\*]\s*/, "")}`).join("\n");
       }
     }
 
