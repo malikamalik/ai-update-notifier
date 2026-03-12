@@ -1,7 +1,7 @@
 // OpenRouter API wrapper for generating article summaries.
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "google/gemini-2.5-flash";
+const MODEL = "google/gemini-2.5-flash-lite";
 const TIMEOUT = 20000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000]; // exponential backoff
