@@ -88,7 +88,7 @@ export default async function handler(req, res) {
     const extracted = enrichedArticles.filter((a) => a.fullText).length;
     console.log(`[cron] Extracted text for ${extracted}/${enrichedArticles.length} articles`);
 
-    // Step 4: Generate AI summaries (parallel, batches of 5) — no fallback to RSS
+    // Step 4: Generate AI summaries (parallel, batches of 5) — fall back to RSS description
     if (timeRemaining() < 10000) {
       console.log("[cron] Low time, skipping summary generation");
       return res.status(200).json({ status: "ok", processed: 0, skipped: articles.length, reason: "timeout" });
@@ -96,11 +96,15 @@ export default async function handler(req, res) {
 
     const summaryResults = await processInBatches(enrichedArticles, BATCH_SIZE, async (article) => {
       if (timeRemaining() < 5000) return article; // skip if running low
-      if (!article.fullText) {
-        console.warn(`[cron] No extracted text for "${article.headline.slice(0, 50)}...", skipping summary`);
+      const textForSummary = article.fullText || article.summary || "";
+      if (!textForSummary) {
+        console.warn(`[cron] No text at all for "${article.headline.slice(0, 50)}...", skipping`);
         return article;
       }
-      const aiSummary = await generateSummary(article.fullText, article.headline, article.link);
+      if (!article.fullText) {
+        console.log(`[cron] Using RSS description as fallback for "${article.headline.slice(0, 50)}..."`);
+      }
+      const aiSummary = await generateSummary(textForSummary, article.headline, article.link);
       console.log(`[cron] Summary for "${article.headline.slice(0, 50)}..." → ${aiSummary ? aiSummary.length + " chars" : "FAILED"}`);
       return { ...article, aiSummary };
     });
