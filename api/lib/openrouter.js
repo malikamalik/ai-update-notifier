@@ -70,6 +70,40 @@ async function callOpenRouter(userContent, apiKey) {
   }
 }
 
+export async function fixTruncatedDescription(description, headline) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return description;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "You rewrite truncated news descriptions into a single complete sentence. Output ONLY the sentence, nothing else. Keep it factual and under 40 words. No quotes, no markdown." },
+          { role: "user", content: `Headline: ${headline}\nTruncated description: ${description}` },
+        ],
+        max_tokens: 100,
+      }),
+    });
+    clearTimeout(timer);
+    if (!res.ok) return description;
+    const data = await res.json();
+    const fixed = data.choices?.[0]?.message?.content?.trim();
+    return fixed && fixed.length > 20 ? fixed : description;
+  } catch {
+    clearTimeout(timer);
+    return description;
+  }
+}
+
 export async function generateSummary(articleText, headline, articleUrl) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;

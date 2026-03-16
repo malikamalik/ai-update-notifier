@@ -5,7 +5,7 @@
 import crypto from "crypto";
 import { db } from "../lib/firestore.js";
 import { fetchAndFilterArticles, extractArticleText } from "../lib/newsCore.js";
-import { generateSummary } from "../lib/openrouter.js";
+import { generateSummary, fixTruncatedDescription } from "../lib/openrouter.js";
 import {
   collection, query, where, getDocs,
   doc, writeBatch, serverTimestamp,
@@ -120,7 +120,15 @@ export default async function handler(req, res) {
       console.warn(`[cron] Dropped ${dropped} articles without AI summary`);
     }
 
-    // Step 5: Batch write to Firestore
+    // Step 5: Fix truncated RSS descriptions (ending with "...")
+    await processInBatches(readyArticles, BATCH_SIZE, async (article) => {
+      if (article.summary && article.summary.endsWith("...")) {
+        article.summary = await fixTruncatedDescription(article.summary, article.headline);
+        console.log(`[cron] Fixed description for "${article.headline.slice(0, 50)}..."`);
+      }
+    });
+
+    // Step 6: Batch write to Firestore
     const batch = writeBatch(db);
     let processed = 0;
 
