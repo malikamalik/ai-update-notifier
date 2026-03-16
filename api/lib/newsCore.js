@@ -380,7 +380,7 @@ export async function extractArticleText(url) {
 export async function fetchAndFilterArticles() {
   const rssResults = await Promise.all(
     QUERIES.map(async (q) => {
-      const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=10&mkt=en-US`;
+      const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=15&mkt=en-US`;
       try {
         const r = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
@@ -416,5 +416,5 @@ export async function fetchAndFilterArticles() {
   }
 
   articles = deduplicateArticles(articles);
-  return articles.slice(0, 20);
+  return articles.slice(0, 30);
 }
