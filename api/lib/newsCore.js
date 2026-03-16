@@ -1,9 +1,15 @@
 // Shared news fetching, filtering, and deduplication logic.
 // Used by both /api/news (live endpoint) and /api/cron/daily-news (cron job).
 
-import { extract } from "@extractus/article-extractor";
+import { extract, extractFromHtml } from "@extractus/article-extractor";
 
-const EXTRACT_TIMEOUT = 8000;
+const EXTRACT_TIMEOUT = 12000;
+
+const BROWSER_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+};
 
 // ── Queries ─────────────────────────────────────────────────────────
 export const QUERIES = [
@@ -322,31 +328,48 @@ export function cleanSummary(summary) {
 }
 
 // ── Article text extraction ─────────────────────────────────────────
+function htmlToText(content) {
+  const paragraphs = content
+    .split(/<\/(?:p|div|h[1-6]|li|blockquote)>/gi)
+    .map((chunk) =>
+      chunk
+        .replace(/<[^>]*>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((p) => p.length > 30);
+
+  return paragraphs.length > 0 ? paragraphs.join("\n\n") : null;
+}
+
 export async function extractArticleText(url) {
+  // Skip MSN — client-rendered SPA, no extractable content
+  if (url.includes("msn.com")) return null;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT);
+
   try {
-    const article = await extract(url, { signal: controller.signal });
+    // Fetch HTML ourselves with browser headers to avoid 403/429 blocks
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: BROWSER_HEADERS,
+      redirect: "follow",
+    });
     clearTimeout(timer);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const article = await extractFromHtml(html, url);
     if (!article || !article.content) return null;
 
-    const paragraphs = article.content
-      .split(/<\/(?:p|div|h[1-6]|li|blockquote)>/gi)
-      .map((chunk) =>
-        chunk
-          .replace(/<[^>]*>/g, "")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&nbsp;/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-      )
-      .filter((p) => p.length > 30);
-
-    return paragraphs.length > 0 ? paragraphs.join("\n\n") : null;
+    return htmlToText(article.content);
   } catch {
     clearTimeout(timer);
     return null;
@@ -373,6 +396,7 @@ export async function fetchAndFilterArticles() {
   let articles = [];
   for (const items of rssResults) {
     for (const item of items) {
+      if (item.link.includes("msn.com")) continue; // MSN is client-rendered, skip
       const provider = detectProvider(item.title);
       if (!provider) continue;
       if (!isFeatureArticle(item.title, item.description)) continue;
