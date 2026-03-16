@@ -41,8 +41,13 @@ export default async function handler(req, res) {
   const timeRemaining = () => MAX_DURATION - (Date.now() - startTime);
 
   try {
-    // Step 1: Fetch + filter articles from Bing RSS
-    const articles = await fetchAndFilterArticles();
+    // Step 1: Fetch + filter articles from Bing RSS (retry once if Bing returns nothing)
+    let articles = await fetchAndFilterArticles();
+    if (articles.length === 0 && timeRemaining() > 20000) {
+      console.log("[cron] Bing returned 0 articles, retrying in 3s...");
+      await new Promise((r) => setTimeout(r, 3000));
+      articles = await fetchAndFilterArticles();
+    }
     console.log(`[cron] Fetched ${articles.length} filtered articles`);
 
     if (articles.length === 0) {
