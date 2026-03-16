@@ -1,4 +1,4 @@
-// /api/cron/daily-news — runs once per day via Vercel cron.
+// /api/cron/daily-news — runs 4x/day via Vercel cron + external trigger.
 // Fetches news, deduplicates against Firestore, extracts article text,
 // generates AI summaries via OpenRouter, and writes to Firestore.
 
@@ -30,8 +30,10 @@ async function processInBatches(items, size, fn) {
 }
 
 export default async function handler(req, res) {
-  // Verify cron auth
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Verify cron auth — accept Vercel's header OR ?secret= query param (for external triggers)
+  const headerAuth = req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`;
+  const queryAuth = req.query.secret === process.env.CRON_SECRET;
+  if (!headerAuth && !queryAuth) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
