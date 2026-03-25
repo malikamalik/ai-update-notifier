@@ -136,7 +136,7 @@ export default async function handler(req, res) {
     // Step 6: Semantic dedup — remove articles covering the same story (different sources)
     if (readyArticles.length > 0 && timeRemaining() > 10000) {
       // Fetch recent headlines from Firestore to compare against
-      const recentQuery = query(articlesRef, orderBy("date", "desc"), limit(50));
+      const recentQuery = query(articlesRef, orderBy("createdAt", "desc"), limit(50));
       const recentSnap = await getDocs(recentQuery);
       const existingHeadlines = recentSnap.docs.map((d) => d.data().headline);
 
