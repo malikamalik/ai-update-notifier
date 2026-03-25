@@ -5,9 +5,9 @@
 import crypto from "crypto";
 import { db } from "../lib/firestore.js";
 import { fetchAndFilterArticles, extractArticleText } from "../lib/newsCore.js";
-import { generateSummary, fixTruncatedDescription } from "../lib/openrouter.js";
+import { generateSummary, fixTruncatedDescription, deduplicateByContent } from "../lib/openrouter.js";
 import {
-  collection, query, where, getDocs,
+  collection, query, where, getDocs, orderBy, limit,
   doc, writeBatch, serverTimestamp,
 } from "firebase/firestore/lite";
 
@@ -119,7 +119,7 @@ export default async function handler(req, res) {
     }
 
     // Only keep articles that got an AI summary — never store RSS descriptions
-    const readyArticles = enrichedArticles.filter((a) => a.aiSummary);
+    let readyArticles = enrichedArticles.filter((a) => a.aiSummary);
     const dropped = enrichedArticles.length - readyArticles.length;
     if (dropped > 0) {
       console.warn(`[cron] Dropped ${dropped} articles without AI summary`);
@@ -133,7 +133,25 @@ export default async function handler(req, res) {
       }
     });
 
-    // Step 6: Batch write to Firestore
+    // Step 6: Semantic dedup — remove articles covering the same story (different sources)
+    if (readyArticles.length > 0 && timeRemaining() > 10000) {
+      // Fetch recent headlines from Firestore to compare against
+      const recentQuery = query(articlesRef, orderBy("date", "desc"), limit(50));
+      const recentSnap = await getDocs(recentQuery);
+      const existingHeadlines = recentSnap.docs.map((d) => d.data().headline);
+
+      const newHeadlines = readyArticles.map((a) => a.headline);
+      const toRemove = await deduplicateByContent(newHeadlines, existingHeadlines);
+
+      if (toRemove.length > 0) {
+        const removeSet = new Set(toRemove);
+        const before = readyArticles.length;
+        readyArticles = readyArticles.filter((_, i) => !removeSet.has(i));
+        console.log(`[cron] Semantic dedup removed ${before - readyArticles.length} duplicate stories`);
+      }
+    }
+
+    // Step 7: Batch write to Firestore
     const batch = writeBatch(db);
     let processed = 0;
 

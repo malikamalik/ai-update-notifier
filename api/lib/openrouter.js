@@ -104,6 +104,55 @@ export async function fixTruncatedDescription(description, headline) {
   }
 }
 
+export async function deduplicateByContent(newHeadlines, existingHeadlines) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey || newHeadlines.length === 0) return [];
+
+  const existingList = existingHeadlines.map((h, i) => `E${i}: ${h}`).join("\n");
+  const newList = newHeadlines.map((h, i) => `N${i}: ${h}`).join("\n");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: "system",
+            content: `You identify duplicate news articles covering the same story/announcement.
+Given EXISTING articles (already stored) and NEW articles (candidates), find NEW articles that cover the same story as an EXISTING article OR as another NEW article.
+For NEW-vs-NEW duplicates, keep the one with the lower index.
+Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if no duplicates. No explanation.`,
+          },
+          {
+            role: "user",
+            content: `EXISTING:\n${existingList || "(none)"}\n\nNEW:\n${newList}`,
+          },
+        ],
+        max_tokens: 200,
+      }),
+    });
+    clearTimeout(timer);
+    if (!res.ok) return [];
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content?.trim() || "[]";
+    const match = text.match(/\[[\d,\s]*\]/);
+    if (!match) return [];
+    const indices = JSON.parse(match[0]);
+    return indices.filter((i) => Number.isInteger(i) && i >= 0 && i < newHeadlines.length);
+  } catch {
+    clearTimeout(timer);
+    return [];
+  }
+}
+
 export async function generateSummary(articleText, headline, articleUrl) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return null;
