@@ -120,8 +120,8 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
       {(update.description || update.summary) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3">
-            <p className="text-[13px] text-gray-400 leading-relaxed">
-              {cleanText(update.description || update.summary.split("\n")[0])}
+            <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
+              {update.description || update.summary.split("\n")[0]}
             </p>
           </div>
         </div>

@@ -91,8 +91,8 @@ export default function FeaturedCard({ update }) {
       {/* Description below the card */}
       {update.summary && (
         <div className="mt-2 px-5 py-3 bg-white rounded-xl border border-gray-100">
-          <p className="text-[13px] text-gray-400 leading-relaxed">
-            {cleanText(update.description || update.summary.split("\n")[0])}
+          <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
+            {update.description || update.summary.split("\n")[0]}
           </p>
         </div>
       )}
