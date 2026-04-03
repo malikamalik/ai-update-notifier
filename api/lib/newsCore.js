@@ -415,27 +415,74 @@ export async function extractArticleImage(url) {
   }
 }
 
+// ── Google News RSS parsing ─────────────────────────────────────────
+function parseGoogleRss(xml) {
+  const items = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  let match;
+  while ((match = itemRegex.exec(xml)) !== null) {
+    const block = match[1];
+    const title = decodeEntities(extractTag(block, "title"));
+    const link = extractTag(block, "link");
+    const rawPubDate = extractTag(block, "pubDate");
+    const source = extractTag(block, "source") || "";
+    // Google News description is HTML — extract text
+    const rawDesc = extractTag(block, "description");
+    const description = decodeEntities(rawDesc.replace(/<[^>]*>/g, "").trim());
+
+    items.push({ title, link, description, pubDate: formatDate(rawPubDate), source });
+  }
+  return items;
+}
+
 // ── Fetch + filter pipeline ─────────────────────────────────────────
 export async function fetchAndFilterArticles() {
-  const rssResults = await Promise.all(
-    QUERIES.map(async (q) => {
-      const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=15&mkt=en-US`;
-      try {
-        const r = await fetch(url, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
-        });
-        if (!r.ok) return [];
-        return parseBingRss(await r.text());
-      } catch {
-        return [];
-      }
-    })
-  );
+  // Fetch from both Bing and Google News in parallel
+  const [bingResults, googleResults] = await Promise.all([
+    // Bing News RSS
+    Promise.all(
+      QUERIES.map(async (q) => {
+        const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=15&mkt=en-US`;
+        try {
+          const r = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
+          });
+          if (!r.ok) return [];
+          return parseBingRss(await r.text());
+        } catch {
+          return [];
+        }
+      })
+    ),
+    // Google News RSS
+    Promise.all(
+      QUERIES.map(async (q) => {
+        const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q + " when:3d")}&hl=en-US&gl=US&ceid=US:en`;
+        try {
+          const r = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
+          });
+          if (!r.ok) return [];
+          return parseGoogleRss(await r.text());
+        } catch {
+          return [];
+        }
+      })
+    ),
+  ]);
+
+  const allRssResults = [...bingResults, ...googleResults];
 
   let articles = [];
-  for (const items of rssResults) {
+  for (const items of allRssResults) {
     for (const item of items) {
-      if (item.link.includes("msn.com")) continue; // MSN is client-rendered, skip
+      if (item.link.includes("msn.com")) continue;
+      // Resolve Google News redirect URLs
+      let link = item.link;
+      if (link.includes("news.google.com/rss/articles/")) {
+        // Google News wraps URLs — keep as-is, they redirect
+      }
+
       const provider = detectProvider(item.title);
       if (!provider) continue;
       if (!isFeatureArticle(item.title, item.description)) continue;
@@ -447,7 +494,7 @@ export async function fetchAndFilterArticles() {
         headline,
         summary,
         date: item.pubDate,
-        link: item.link,
+        link,
         source: item.source,
         provider,
       });
