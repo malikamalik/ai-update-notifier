@@ -64,11 +64,11 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
       ? allUpdates
       : allUpdates.filter((u) => u.provider === activeFilter);
 
-  const featuredCount = activeFilter === "all" ? 5 : 1;
-  const featuredUpdates = !showBookmarks ? filteredUpdates.slice(0, featuredCount) : [];
+  const showFeatured = activeFilter === "all" && !showBookmarks;
+  const featuredUpdates = showFeatured ? filteredUpdates.slice(0, 5) : [];
   const restUpdates = showBookmarks
     ? filteredUpdates.filter((u) => bookmarks.has(String(u.id)))
-    : filteredUpdates.slice(featuredCount);
+    : showFeatured ? filteredUpdates.slice(5) : filteredUpdates;
 
   const articleCount = allUpdates.length;
   const providerCount = new Set(allUpdates.map((u) => u.provider)).size;
