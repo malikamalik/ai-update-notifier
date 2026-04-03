@@ -172,19 +172,24 @@ function App() {
   const allUpdates = [...liveUpdates, ...staticUpdates].reduce(
     (acc, update) => {
       const h = update.headline.toLowerCase();
-      const getSignature = (s) => {
-        const products = ["chatgpt","gemini","gemma","claude","copilot","grok","deepseek","perplexity","midjourney","firefly","comet","dispatch","codex","carplay","siri"];
+      const getSubjects = (s) => {
+        const products = ["chatgpt","gemini","gemma","claude","copilot","grok","deepseek","perplexity","midjourney","firefly","comet","dispatch","codex","carplay","siri","cursor"];
         const found = products.filter((p) => s.includes(p));
+        // Versioned names: "gemma 4", "gpt-5.3", "gemini 3"
         const versioned = (s.match(/[a-z]+[\s-]?\d+(\.\d+)*/g) || []).map((m) => m.replace(/\s/g, ""));
-        return [...found, ...versioned].sort().join("+");
+        return new Set([...found, ...versioned]);
       };
-      const sig = getSignature(h);
+      const subjects = getSubjects(h);
       const isDupe = acc.some((existing) => {
         const eh = existing.headline.toLowerCase();
         if (eh.slice(0, 50) === h.slice(0, 50)) return true;
-        if (!sig || sig.length < 3) return false;
-        const eSig = getSignature(eh);
-        return sig === eSig && sig.length > 0;
+        if (subjects.size === 0) return false;
+        // If any versioned product name (e.g. "gemma4") appears in both, same announcement
+        const eSubjects = getSubjects(eh);
+        for (const s of subjects) {
+          if (s.match(/\d/) && eSubjects.has(s)) return true;
+        }
+        return false;
       });
       if (!isDupe) acc.push(update);
       return acc;
