@@ -81,11 +81,17 @@ export default async function handler(req, res) {
 
     const results = dedupedArticles.map((a, i) => {
       const dateMs = a.date ? new Date(a.date).getTime() : 0;
+      // Extract TL;DR line from AI summary for the description field
+      let description = a.summary;
+      if (a.aiSummary) {
+        const tldrMatch = a.aiSummary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
+        if (tldrMatch) description = tldrMatch[1].trim();
+      }
       return {
         id: `live-${a.provider}-${i}-${now}`,
         provider: a.provider,
         headline: a.headline,
-        description: a.summary,
+        description,
         summary: a.aiSummary || a.summary,
         date: a.date || new Date().toISOString().split("T")[0],
         isNew: dateMs > 0 && now - dateMs < THREE_DAYS,

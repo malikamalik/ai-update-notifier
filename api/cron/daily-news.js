@@ -158,10 +158,16 @@ export default async function handler(req, res) {
     for (const article of readyArticles) {
       const docId = urlHash(article.link);
       const ref = doc(db, "articles", docId);
+      // Extract TL;DR line from AI summary for the description field
+      let description = article.summary;
+      if (article.aiSummary) {
+        const tldrMatch = article.aiSummary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
+        if (tldrMatch) description = tldrMatch[1].trim();
+      }
       batch.set(ref, {
         url: article.link,
         headline: article.headline,
-        description: article.summary,
+        description,
         summary: article.aiSummary,
         provider: article.provider,
         source: article.source || "",
