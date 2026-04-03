@@ -85,22 +85,25 @@ export default function ArticlePage({ allUpdates }) {
       <div className="max-w-3xl mx-auto">
         {/* Hero banner with back button overlay */}
         <div className="relative rounded-b-2xl overflow-hidden" style={{ height: "240px" }}>
-          <div
-            className="absolute inset-0"
-            style={{
-              background: `linear-gradient(135deg, ${provider?.bgColor || "#f3f4f6"} 0%, #ddd 50%, #9ca3af 100%)`,
-            }}
-          />
-
-          {provider?.logo && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <img
-                src={provider.logo}
-                alt=""
-                className="w-28 h-28 object-contain opacity-30"
-                style={{ filter: "grayscale(100%)" }}
+          {update.image ? (
+            <>
+              <img src={update.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-black/5" />
+            </>
+          ) : (
+            <>
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: `linear-gradient(135deg, ${provider?.bgColor || "#f3f4f6"} 0%, #ddd 50%, #9ca3af 100%)`,
+                }}
               />
-            </div>
+              {provider?.logo && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <img src={provider.logo} alt="" className="w-28 h-28 object-contain opacity-30" style={{ filter: "grayscale(100%)" }} />
+                </div>
+              )}
+            </>
           )}
 
           <button

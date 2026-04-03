@@ -16,12 +16,14 @@ function timeAgo(dateStr) {
 
 function readingTime(text) {
   const words = (text || "").split(/\s+/).length;
-  const mins = Math.max(1, Math.round(words / 200));
-  return `${mins} min read`;
+  return `${Math.max(1, Math.round(words / 200))} min read`;
 }
 
-function cleanText(text) {
-  if (!text) return "";
+function getDescription(update) {
+  const summary = update.summary || "";
+  const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
+  if (tldrMatch) return tldrMatch[1].trim();
+  const text = update.description || summary.split("\n")[0];
   if (text.endsWith("...") || text.endsWith("\u2026")) {
     const clean = text.replace(/\.{3}$|\u2026$/, "");
     const lastDot = clean.lastIndexOf(".");
@@ -45,14 +47,23 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
       className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-200 group cursor-pointer"
       style={{ borderLeftWidth: "4px", borderLeftColor: provider?.color }}
     >
-      {/* Top section: logo + meta + headline + bookmark */}
       <div className="flex gap-4 p-4 pb-3">
-        {/* Provider logo thumbnail */}
+        {/* Thumbnail: article image or provider logo */}
         <div
-          className="w-16 h-16 rounded-xl flex items-center justify-center shrink-0"
+          className="w-16 h-16 rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
           style={{ backgroundColor: provider?.bgColor || "#f3f4f6" }}
         >
-          {provider?.logo ? (
+          {update.image ? (
+            <img
+              src={update.image}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                e.target.style.display = "none";
+                e.target.parentElement.innerHTML = `<img src="${provider?.logo}" class="w-9 h-9 object-contain" style="filter: grayscale(100%) opacity(0.5)" />`;
+              }}
+            />
+          ) : provider?.logo ? (
             <img
               src={provider.logo}
               alt={provider.name}
@@ -60,10 +71,7 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
               style={{ filter: "grayscale(100%) opacity(0.5)" }}
             />
           ) : (
-            <span
-              className="text-xl font-medium"
-              style={{ color: provider?.color, opacity: 0.5 }}
-            >
+            <span className="text-xl font-medium" style={{ color: provider?.color, opacity: 0.5 }}>
               {provider?.name?.charAt(0)}
             </span>
           )}
@@ -74,9 +82,7 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
           <div className="flex items-start justify-between gap-2">
             <div>
               <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
-                <span className="font-medium text-gray-500">
-                  {provider?.name}
-                </span>
+                <span className="font-medium text-gray-500">{provider?.name}</span>
                 <span>&middot;</span>
                 <span>{timeAgo(update.date)}</span>
                 <span>&middot;</span>
@@ -87,58 +93,29 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
               </h3>
             </div>
 
-            {/* Bookmark button */}
             <button
               data-bookmark
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleBookmark();
-              }}
+              onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}
               className={`p-1 transition-colors cursor-pointer shrink-0 mt-0.5 ${
                 bookmarked ? "text-blue-500" : "text-gray-300 hover:text-gray-500"
               }`}
             >
-              <svg
-                className="w-5 h-5"
-                fill={bookmarked ? "currentColor" : "none"}
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
-                />
+              <svg className="w-5 h-5" fill={bookmarked ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z" />
               </svg>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Description — full width below divider */}
-      {(update.description || update.summary) && (
-        <div className="px-4 pb-4">
-          <div className="border-t border-gray-100 pt-3">
-            <p className="text-[13px] text-gray-400 leading-relaxed">
-              {(() => {
-                // Prefer AI summary's TL;DR over truncated RSS description
-                const summary = update.summary || "";
-                const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
-                if (tldrMatch) return tldrMatch[1].trim();
-                // Otherwise use description, trimmed to last complete sentence
-                const text = update.description || summary.split("\n")[0];
-                if (text.endsWith("...") || text.endsWith("\u2026")) {
-                  const clean = text.replace(/\.{3}$|\u2026$/, "");
-                  const lastDot = clean.lastIndexOf(".");
-                  if (lastDot > 20) return clean.slice(0, lastDot + 1);
-                }
-                return text;
-              })()}
-            </p>
-          </div>
+      {/* Description */}
+      <div className="px-4 pb-4">
+        <div className="border-t border-gray-100 pt-3">
+          <p className="text-[13px] text-gray-400 leading-relaxed">
+            {getDescription(update)}
+          </p>
         </div>
-      )}
+      </div>
     </div>
   );
 }

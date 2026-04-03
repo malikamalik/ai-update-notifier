@@ -1,7 +1,7 @@
 // /api/news — live endpoint that fetches from Bing News RSS,
 // extracts article text, generates AI summaries, and deduplicates by content.
 
-import { fetchAndFilterArticles, extractArticleText } from "./lib/newsCore.js";
+import { fetchAndFilterArticles, extractArticleText, extractArticleImage } from "./lib/newsCore.js";
 import { generateSummary, deduplicateByContent } from "./lib/openrouter.js";
 
 const BATCH_SIZE = 5;
@@ -43,23 +43,23 @@ export default async function handler(req, res) {
       }
     }
 
-    // Step 2: Extract article text + generate AI summaries in batches
+    // Step 2: Extract article text, images, and generate AI summaries in batches
     const enrichResults = await processInBatches(articles, BATCH_SIZE, async (article) => {
       try {
-        // Try extracting full article text first
-        let text = await extractArticleText(article.link);
+        // Extract image and text in parallel
+        const [text, image] = await Promise.all([
+          extractArticleText(article.link).catch(() => null),
+          extractArticleImage(article.link).catch(() => null),
+        ]);
 
-        // If extraction fails, use headline + RSS description as input
-        if (!text) {
-          text = `Headline: ${article.headline}\nDescription: ${article.summary}`;
-          console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
-        }
+        const inputText = text || `Headline: ${article.headline}\nDescription: ${article.summary}`;
+        if (!text) console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
 
-        const aiSummary = await generateSummary(text, article.headline, article.link);
+        const aiSummary = await generateSummary(inputText, article.headline, article.link);
         if (aiSummary) {
           console.log(`[news] AI summary for: ${article.headline.slice(0, 50)}`);
-          return { ...article, aiSummary };
         }
+        return { ...article, aiSummary: aiSummary || null, image: image || null };
       } catch (e) {
         console.warn(`[news] Enrich failed for "${article.headline.slice(0, 40)}": ${e.message}`);
       }
@@ -85,6 +85,7 @@ export default async function handler(req, res) {
         isNew: dateMs > 0 && now - dateMs < THREE_DAYS,
         link: a.link,
         source: a.source,
+        image: a.image || null,
         isLive: true,
       };
     });

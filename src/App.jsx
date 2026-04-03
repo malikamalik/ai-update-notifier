@@ -3,7 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import { updates as staticUpdates } from "./data/updates";
 import { fetchAllNews, hasApiKey } from "./services/newsService";
 import UpdateCard from "./components/UpdateCard";
-import FeaturedCard from "./components/FeaturedCard";
+import FeaturedCarousel from "./components/FeaturedCard";
 import FilterBar from "./components/FilterBar";
 import ArticlePage from "./components/ArticlePage";
 
@@ -64,10 +64,10 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
       ? allUpdates
       : allUpdates.filter((u) => u.provider === activeFilter);
 
-  const featured = !showBookmarks ? filteredUpdates[0] : null;
+  const featuredUpdates = !showBookmarks ? filteredUpdates.slice(0, 5) : [];
   const restUpdates = showBookmarks
     ? filteredUpdates.filter((u) => bookmarks.has(String(u.id)))
-    : filteredUpdates.slice(1);
+    : filteredUpdates.slice(5);
 
   const articleCount = allUpdates.length;
   const providerCount = new Set(allUpdates.map((u) => u.provider)).size;
@@ -118,10 +118,10 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
         </div>
 
         {/* Featured */}
-        {featured && (
+        {featuredUpdates.length > 0 && (
           <section className="mb-4">
             <h2 className="text-lg font-medium text-gray-900 mb-3">New AI Signals</h2>
-            <FeaturedCard update={featured} />
+            <FeaturedCarousel updates={featuredUpdates} />
           </section>
         )}
 

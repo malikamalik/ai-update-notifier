@@ -358,7 +358,6 @@ export async function extractArticleText(url) {
   const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT);
 
   try {
-    // Fetch HTML ourselves with browser headers to avoid 403/429 blocks
     const res = await fetch(url, {
       signal: controller.signal,
       headers: BROWSER_HEADERS,
@@ -372,6 +371,44 @@ export async function extractArticleText(url) {
     if (!article || !article.content) return null;
 
     return htmlToText(article.content);
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
+export async function extractArticleImage(url) {
+  if (url.includes("msn.com")) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: BROWSER_HEADERS,
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+
+    // Try og:image meta tag first
+    const ogMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
+    if (ogMatch) return ogMatch[1];
+
+    // Try twitter:image
+    const twMatch = html.match(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i);
+    if (twMatch) return twMatch[1];
+
+    // Try article-extractor
+    const article = await extractFromHtml(html, url);
+    if (article?.image) return article.image;
+
+    return null;
   } catch {
     clearTimeout(timer);
     return null;
