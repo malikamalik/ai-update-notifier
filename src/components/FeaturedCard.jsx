@@ -12,14 +12,18 @@ function formatDate(dateStr) {
 }
 
 function getDescription(update) {
+  // Always prefer the TL;DR from the AI summary
   const summary = update.summary || "";
   const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
   if (tldrMatch) return tldrMatch[1].trim();
+  // Fallback: use description but ensure it's a complete sentence
   const text = update.description || summary.split("\n")[0];
   if (text.endsWith("...") || text.endsWith("\u2026")) {
     const clean = text.replace(/\.{3}$|\u2026$/, "");
     const lastDot = clean.lastIndexOf(".");
     if (lastDot > 20) return clean.slice(0, lastDot + 1);
+    // No complete sentence found — use TL;DR or first line of summary
+    return summary.split("\n")[0].replace(/^TL;?DR:?\s*/i, "").trim() || text;
   }
   return text;
 }

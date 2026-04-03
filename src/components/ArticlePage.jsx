@@ -75,12 +75,18 @@ export default function ArticlePage({ allUpdates }) {
   const [imgError, setImgError] = useState(false);
   const { tldr, points } = parseSummary(update.summary);
 
-  // Show description only if it's meaningfully different from TL;DR
+  // Show description only if it's a clean, complete sentence different from TL;DR
   const desc = update.description || "";
+  const isTruncated = desc.endsWith("...") || desc.endsWith("\u2026");
+  const isHeadlineRepeat = desc.toLowerCase().slice(0, 40) === update.headline?.toLowerCase().slice(0, 40);
+  const isTldrRepeat = desc.toLowerCase().slice(0, 40) === tldr.toLowerCase().slice(0, 40);
+  const isSummaryRepeat = desc.toLowerCase().slice(0, 40) === update.summary?.toLowerCase().slice(0, 40);
   const showDescription =
     desc.length > 0 &&
-    desc.toLowerCase().slice(0, 40) !== tldr.toLowerCase().slice(0, 40) &&
-    desc.toLowerCase().slice(0, 40) !== update.summary?.toLowerCase().slice(0, 40);
+    !isTruncated &&
+    !isHeadlineRepeat &&
+    !isTldrRepeat &&
+    !isSummaryRepeat;
 
   return (
     <div className="min-h-screen bg-white">
