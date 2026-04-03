@@ -26,6 +26,7 @@ function getDescription(update) {
 
 export default function FeaturedCarousel({ updates }) {
   const [current, setCurrent] = useState(0);
+  const [imgError, setImgError] = useState({});
   const navigate = useNavigate();
 
   if (!updates || updates.length === 0) return null;
@@ -42,12 +43,13 @@ export default function FeaturedCarousel({ updates }) {
         style={{ minHeight: "260px" }}
       >
         {/* Background: article image or gradient */}
-        {update.image ? (
+        {update.image && !imgError[update.id] ? (
           <>
             <img
               src={update.image}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"
+              onError={() => setImgError((prev) => ({ ...prev, [update.id]: true }))}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-black/10" />
           </>

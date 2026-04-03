@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PROVIDERS } from "../data/providers";
 
@@ -35,11 +36,14 @@ function getDescription(update) {
 export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
   const provider = PROVIDERS[update.provider];
   const navigate = useNavigate();
+  const [imgError, setImgError] = useState(false);
 
   const handleClick = (e) => {
     if (e.target.closest("[data-bookmark]")) return;
     navigate(`/article/${update.id}`);
   };
+
+  const showArticleImg = update.image && !imgError;
 
   return (
     <div
@@ -48,20 +52,16 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
       style={{ borderLeftWidth: "4px", borderLeftColor: provider?.color }}
     >
       <div className="flex gap-4 p-4 pb-3">
-        {/* Thumbnail: article image or provider logo */}
         <div
           className="w-16 h-16 rounded-xl overflow-hidden shrink-0 flex items-center justify-center"
           style={{ backgroundColor: provider?.bgColor || "#f3f4f6" }}
         >
-          {update.image ? (
+          {showArticleImg ? (
             <img
               src={update.image}
               alt=""
               className="w-full h-full object-cover"
-              onError={(e) => {
-                e.target.style.display = "none";
-                e.target.parentElement.innerHTML = `<img src="${provider?.logo}" class="w-9 h-9 object-contain" style="filter: grayscale(100%) opacity(0.5)" />`;
-              }}
+              onError={() => setImgError(true)}
             />
           ) : provider?.logo ? (
             <img
@@ -77,7 +77,6 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
           )}
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div>
@@ -108,7 +107,6 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
         </div>
       </div>
 
-      {/* Description */}
       <div className="px-4 pb-4">
         <div className="border-t border-gray-100 pt-3">
           <p className="text-[13px] text-gray-400 leading-relaxed">

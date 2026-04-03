@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PROVIDERS } from "../data/providers";
 
@@ -71,6 +72,7 @@ export default function ArticlePage({ allUpdates }) {
   }
 
   const provider = PROVIDERS[update.provider];
+  const [imgError, setImgError] = useState(false);
   const { tldr, points } = parseSummary(update.summary);
 
   // Show description only if it's meaningfully different from TL;DR
@@ -85,9 +87,9 @@ export default function ArticlePage({ allUpdates }) {
       <div className="max-w-3xl mx-auto">
         {/* Hero banner with back button overlay */}
         <div className="relative rounded-b-2xl overflow-hidden" style={{ height: "240px" }}>
-          {update.image ? (
+          {update.image && !imgError ? (
             <>
-              <img src={update.image} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src={update.image} alt="" className="absolute inset-0 w-full h-full object-cover" onError={() => setImgError(true)} />
               <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-black/5" />
             </>
           ) : (
