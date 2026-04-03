@@ -172,37 +172,34 @@ function App() {
   const allUpdates = [...liveUpdates, ...staticUpdates].reduce(
     (acc, update) => {
       const h = update.headline.toLowerCase();
-      // Extract meaningful words (drop stop words) for content comparison
-      const stopWords = new Set(["the","a","an","and","or","but","for","with","this","that","from","are","not","has","its","new","how","was","can","may","now","will","all","more","than","into","also","just","been","have","one","what","is","in","on","to","of","it","by","at","as","be","so","if","up","no","do","my","we","he","us","am","an"]);
-      const getWords = (s) => new Set((s.match(/\b[a-z0-9]{3,}\b/g) || []).filter((w) => !stopWords.has(w)));
-      const words = getWords(h);
-      // Also check description/summary content
-      const content = (update.description || update.summary || "").toLowerCase();
-      const contentWords = getWords(content);
+      // Extract 2-word phrases from headline for matching
+      const getPhrases = (s) => {
+        const words = s.match(/\b[a-z0-9]+\b/g) || [];
+        const phrases = new Set();
+        for (let i = 0; i < words.length - 1; i++) {
+          phrases.add(words[i] + " " + words[i + 1]);
+        }
+        return phrases;
+      };
+      const phrases = getPhrases(h);
 
       const isDupe = acc.some((existing) => {
         const eh = existing.headline.toLowerCase();
-        // Exact prefix match
         if (eh.slice(0, 50) === h.slice(0, 50)) return true;
 
-        // Headline word overlap: if 50%+ of significant words match
-        const eWords = getWords(eh);
-        if (words.size >= 3 && eWords.size >= 3) {
-          let overlap = 0;
-          for (const w of words) { if (eWords.has(w)) overlap++; }
-          const smaller = Math.min(words.size, eWords.size);
-          if (overlap / smaller >= 0.5) return true;
+        // Shared 2-word phrases between headlines (e.g. "gemma 4", "chatgpt voice")
+        const ePhrases = getPhrases(eh);
+        let shared = 0;
+        let hasVersionMatch = false;
+        for (const p of phrases) {
+          if (ePhrases.has(p)) {
+            shared++;
+            // A phrase with a number is a product version (gemma 4, gpt 5, gemini 3)
+            if (/\d/.test(p)) hasVersionMatch = true;
+          }
         }
-
-        // Content overlap: compare descriptions too
-        const eContent = (existing.description || existing.summary || "").toLowerCase();
-        const eContentWords = getWords(eContent);
-        if (contentWords.size >= 5 && eContentWords.size >= 5) {
-          let overlap = 0;
-          for (const w of contentWords) { if (eContentWords.has(w)) overlap++; }
-          const smaller = Math.min(contentWords.size, eContentWords.size);
-          if (overlap / smaller >= 0.5) return true;
-        }
+        // Same story if: any product+version phrase matches, OR 3+ generic bigrams match
+        if (hasVersionMatch || shared >= 3) return true;
 
         return false;
       });
