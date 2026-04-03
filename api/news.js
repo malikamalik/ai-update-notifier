@@ -1,8 +1,8 @@
 // /api/news — live endpoint that fetches from Bing News RSS,
-// extracts article text, and generates AI summaries with TL;DR + bullets.
+// extracts article text, generates AI summaries, and deduplicates by content.
 
 import { fetchAndFilterArticles, extractArticleText } from "./lib/newsCore.js";
-import { generateSummary } from "./lib/openrouter.js";
+import { generateSummary, deduplicateByContent } from "./lib/openrouter.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -10,12 +10,22 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
 
   try {
-    const articles = await fetchAndFilterArticles();
+    let articles = await fetchAndFilterArticles();
 
     const now = Date.now();
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
-    // Enrich top articles with AI summaries (parallel, max 5 at a time)
+    // Step 1: AI content dedup — remove articles covering the same announcement
+    if (articles.length > 1) {
+      const headlines = articles.map((a) => a.headline);
+      const toRemove = await deduplicateByContent(headlines, []);
+      if (toRemove.length > 0) {
+        const removeSet = new Set(toRemove);
+        articles = articles.filter((_, i) => !removeSet.has(i));
+      }
+    }
+
+    // Step 2: Enrich top articles with AI summaries
     const enriched = await Promise.allSettled(
       articles.slice(0, 10).map(async (a) => {
         try {
@@ -33,7 +43,6 @@ export default async function handler(req, res) {
       .filter((r) => r.status === "fulfilled")
       .map((r) => r.value);
 
-    // Add remaining articles without enrichment
     const remaining = articles.slice(10);
 
     const results = [...enrichedArticles, ...remaining].map((a, i) => {
