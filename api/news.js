@@ -2,7 +2,7 @@
 // extracts article text, generates AI summaries, and deduplicates by content.
 
 import { fetchAndFilterArticles, extractArticleText, extractArticleImage } from "./lib/newsCore.js";
-import { generateSummary, fixTruncatedDescription } from "./lib/openrouter.js";
+import { generateSummary, fixTruncatedDescription, deduplicateByContent } from "./lib/openrouter.js";
 
 const BATCH_SIZE = 5;
 
@@ -69,7 +69,17 @@ export default async function handler(req, res) {
     const aiCount = enrichedArticles.filter((a) => a.aiSummary).length;
     console.log(`[news] ${aiCount}/${enrichedArticles.length} articles enriched with AI`);
 
-    const results = enrichedArticles.map((a, i) => {
+    // Semantic dedup — use AI to remove articles covering the same story/feature
+    const headlines = enrichedArticles.map((a) => a.headline);
+    const toRemove = await deduplicateByContent(headlines, []);
+    let dedupedArticles = enrichedArticles;
+    if (toRemove.length > 0) {
+      const removeSet = new Set(toRemove);
+      dedupedArticles = enrichedArticles.filter((_, i) => !removeSet.has(i));
+      console.log(`[news] Semantic dedup removed ${toRemove.length} duplicate stories`);
+    }
+
+    const results = dedupedArticles.map((a, i) => {
       const dateMs = a.date ? new Date(a.date).getTime() : 0;
       return {
         id: `live-${a.provider}-${i}-${now}`,
