@@ -46,12 +46,16 @@ export default async function handler(req, res) {
     // Step 2: Extract article text + generate AI summaries in batches
     const enrichResults = await processInBatches(articles, BATCH_SIZE, async (article) => {
       try {
-        const fullText = await extractArticleText(article.link);
-        if (!fullText) {
-          console.warn(`[news] No text extracted for: ${article.headline.slice(0, 50)}`);
-          return article;
+        // Try extracting full article text first
+        let text = await extractArticleText(article.link);
+
+        // If extraction fails, use headline + RSS description as input
+        if (!text) {
+          text = `Headline: ${article.headline}\nDescription: ${article.summary}`;
+          console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
         }
-        const aiSummary = await generateSummary(fullText, article.headline, article.link);
+
+        const aiSummary = await generateSummary(text, article.headline, article.link);
         if (aiSummary) {
           console.log(`[news] AI summary for: ${article.headline.slice(0, 50)}`);
           return { ...article, aiSummary };
