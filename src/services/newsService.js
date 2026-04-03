@@ -28,11 +28,11 @@ export async function fetchAllNews() {
     }
   } catch { /* fall through to /api/news */ }
 
-  // Fallback to live RSS endpoint
+  // Fallback to live RSS endpoint — add v param to bust stale CDN cache on deploy
   const fallbackUrl = base
     ? base.replace(/\/api\/articles$/, "/api/news")
     : "/api/news";
-  const res = await fetchWithTimeout(fallbackUrl, FETCH_TIMEOUT);
+  const res = await fetchWithTimeout(`${fallbackUrl}?v=2`, FETCH_TIMEOUT);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   if (data.status !== "ok") throw new Error(data.error || "API error");
