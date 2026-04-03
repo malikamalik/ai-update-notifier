@@ -2,7 +2,7 @@
 // extracts article text, generates AI summaries, and deduplicates by content.
 
 import { fetchAndFilterArticles, extractArticleText, extractArticleImage } from "./lib/newsCore.js";
-import { generateSummary, deduplicateByContent } from "./lib/openrouter.js";
+import { generateSummary } from "./lib/openrouter.js";
 
 const BATCH_SIZE = 5;
 
@@ -28,22 +28,7 @@ export default async function handler(req, res) {
     const now = Date.now();
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
-    // Step 1: AI content dedup
-    if (articles.length > 1) {
-      try {
-        const headlines = articles.map((a) => a.headline);
-        const toRemove = await deduplicateByContent(headlines, []);
-        if (toRemove.length > 0) {
-          const removeSet = new Set(toRemove);
-          articles = articles.filter((_, i) => !removeSet.has(i));
-          console.log(`[news] Dedup removed ${toRemove.length}, ${articles.length} remaining`);
-        }
-      } catch (e) {
-        console.warn("[news] Dedup failed:", e.message);
-      }
-    }
-
-    // Step 2: Extract article text, images, and generate AI summaries in batches
+    // Extract article text, images, and generate AI summaries in batches
     const enrichResults = await processInBatches(articles, BATCH_SIZE, async (article) => {
       try {
         // Extract image and text in parallel
