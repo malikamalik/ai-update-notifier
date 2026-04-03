@@ -20,6 +20,16 @@ function readingTime(text) {
   return `${mins} min read`;
 }
 
+function cleanText(text) {
+  if (!text) return "";
+  if (text.endsWith("...") || text.endsWith("\u2026")) {
+    const clean = text.replace(/\.{3}$|\u2026$/, "");
+    const lastDot = clean.lastIndexOf(".");
+    if (lastDot > 20) return clean.slice(0, lastDot + 1);
+  }
+  return text;
+}
+
 export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
   const provider = PROVIDERS[update.provider];
   const navigate = useNavigate();
@@ -32,26 +42,27 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
   return (
     <div
       onClick={handleClick}
-      className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-200 group cursor-pointer"
+      className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-200 group cursor-pointer"
       style={{ borderLeftWidth: "4px", borderLeftColor: provider?.color }}
     >
-      <div className="flex gap-4 p-4">
+      {/* Top section: logo + meta + headline + bookmark */}
+      <div className="flex gap-4 p-4 pb-3">
         {/* Provider logo thumbnail */}
         <div
-          className="w-20 h-20 rounded-xl flex items-center justify-center shrink-0"
+          className="w-16 h-16 rounded-xl flex items-center justify-center shrink-0"
           style={{ backgroundColor: provider?.bgColor || "#f3f4f6" }}
         >
           {provider?.logo ? (
             <img
               src={provider.logo}
               alt={provider.name}
-              className="w-10 h-10 object-contain"
-              style={{ filter: "grayscale(100%) opacity(0.6)" }}
+              className="w-9 h-9 object-contain"
+              style={{ filter: "grayscale(100%) opacity(0.5)" }}
             />
           ) : (
             <span
-              className="text-2xl font-bold"
-              style={{ color: provider?.color, opacity: 0.6 }}
+              className="text-xl font-bold"
+              style={{ color: provider?.color, opacity: 0.5 }}
             >
               {provider?.name?.charAt(0)}
             </span>
@@ -66,12 +77,12 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
                 <span className="font-medium text-gray-500">
                   {provider?.name}
                 </span>
-                <span>·</span>
+                <span>&middot;</span>
                 <span>{timeAgo(update.date)}</span>
-                <span>·</span>
+                <span>&middot;</span>
                 <span>{readingTime(update.summary)}</span>
               </div>
-              <h3 className="text-[15px] font-bold text-gray-900 leading-snug group-hover:text-gray-700">
+              <h3 className="text-[15px] font-semibold text-gray-900 leading-snug group-hover:text-gray-700">
                 {update.headline}
               </h3>
             </div>
@@ -105,21 +116,12 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
         </div>
       </div>
 
-      {/* Description below divider */}
+      {/* Description — full width below divider */}
       {(update.description || update.summary) && (
         <div className="px-4 pb-4">
-          <div className="border-t border-gray-100 pt-3 ml-24">
-            <p className="text-sm text-gray-400 leading-relaxed">
-              {(() => {
-                const text = update.description || update.summary.split("\n")[0];
-                // If text ends with "..." it's truncated — trim to last complete sentence
-                if (text.endsWith("...") || text.endsWith("…")) {
-                  const clean = text.replace(/\.{3}$|…$/, "");
-                  const lastDot = clean.lastIndexOf(".");
-                  if (lastDot > 20) return clean.slice(0, lastDot + 1);
-                }
-                return text;
-              })()}
+          <div className="border-t border-gray-100 pt-3">
+            <p className="text-[13px] text-gray-400 leading-relaxed">
+              {cleanText(update.description || update.summary.split("\n")[0])}
             </p>
           </div>
         </div>

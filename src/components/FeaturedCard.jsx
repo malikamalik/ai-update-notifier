@@ -16,6 +16,16 @@ function formatDate(dateStr) {
   });
 }
 
+function cleanText(text) {
+  if (!text) return "";
+  if (text.endsWith("...") || text.endsWith("\u2026")) {
+    const clean = text.replace(/\.{3}$|\u2026$/, "");
+    const lastDot = clean.lastIndexOf(".");
+    if (lastDot > 20) return clean.slice(0, lastDot + 1);
+  }
+  return text;
+}
+
 export default function FeaturedCard({ update }) {
   const provider = PROVIDERS[update.provider];
   const navigate = useNavigate();
@@ -35,23 +45,30 @@ export default function FeaturedCard({ update }) {
           }}
         />
 
+        {/* 3-dot indicator */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+          <span className="w-2 h-2 rounded-full bg-white/40" />
+          <span className="w-2 h-2 rounded-full bg-white/60" />
+          <span className="w-2 h-2 rounded-full bg-white/40" />
+        </div>
+
         {/* Large watermark logo */}
         {provider?.logo && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-20">
+          <div className="absolute inset-0 flex items-center justify-center opacity-25">
             <img
               src={provider.logo}
               alt=""
-              className="w-32 h-32 object-contain"
+              className="w-28 h-28 object-contain"
               style={{ filter: "grayscale(100%)" }}
             />
           </div>
         )}
 
         {/* Bottom overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/60 to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-5 bg-gradient-to-t from-black/60 to-transparent pt-16">
           <div className="flex items-center gap-2 text-white/80 text-xs mb-2">
             <span>{readingTime(update.summary)}</span>
-            <span>·</span>
+            <span>&middot;</span>
             <span>{formatDate(update.date)}</span>
           </div>
           <h3 className="text-white text-lg font-bold leading-snug pr-28 group-hover:underline">
@@ -73,17 +90,9 @@ export default function FeaturedCard({ update }) {
 
       {/* Description below the card */}
       {update.summary && (
-        <div className="mt-2 px-4 py-2.5 bg-white rounded-xl border border-gray-100">
-          <p className="text-sm text-gray-500 leading-relaxed">
-            {(() => {
-              const text = update.description || update.summary.split("\n")[0];
-              if (text.endsWith("...") || text.endsWith("…")) {
-                const clean = text.replace(/\.{3}$|…$/, "");
-                const lastDot = clean.lastIndexOf(".");
-                if (lastDot > 20) return clean.slice(0, lastDot + 1);
-              }
-              return text;
-            })()}
+        <div className="mt-2 px-5 py-3 bg-white rounded-xl border border-gray-100">
+          <p className="text-[13px] text-gray-400 leading-relaxed">
+            {cleanText(update.description || update.summary.split("\n")[0])}
           </p>
         </div>
       )}
