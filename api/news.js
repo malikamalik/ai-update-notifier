@@ -1,7 +1,8 @@
-// /api/news — live endpoint that fetches from Bing News RSS on demand.
-// Kept as a fallback / manual testing endpoint. Frontend now uses /api/articles.
+// /api/news — live endpoint that fetches from Bing News RSS,
+// extracts article text, and generates AI summaries with TL;DR + bullets.
 
-import { fetchAndFilterArticles } from "./lib/newsCore.js";
+import { fetchAndFilterArticles, extractArticleText } from "./lib/newsCore.js";
+import { generateSummary } from "./lib/openrouter.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -13,13 +14,36 @@ export default async function handler(req, res) {
 
     const now = Date.now();
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
-    const results = articles.map((a, i) => {
+
+    // Enrich top articles with AI summaries (parallel, max 5 at a time)
+    const enriched = await Promise.allSettled(
+      articles.slice(0, 10).map(async (a) => {
+        try {
+          const fullText = await extractArticleText(a.link);
+          if (fullText) {
+            const aiSummary = await generateSummary(fullText, a.headline, a.link);
+            if (aiSummary) return { ...a, aiSummary };
+          }
+        } catch { /* use RSS summary as fallback */ }
+        return a;
+      })
+    );
+
+    const enrichedArticles = enriched
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => r.value);
+
+    // Add remaining articles without enrichment
+    const remaining = articles.slice(10);
+
+    const results = [...enrichedArticles, ...remaining].map((a, i) => {
       const dateMs = a.date ? new Date(a.date).getTime() : 0;
       return {
         id: `live-${a.provider}-${i}-${now}`,
         provider: a.provider,
         headline: a.headline,
-        summary: a.summary,
+        description: a.summary,
+        summary: a.aiSummary || a.summary,
         date: a.date || new Date().toISOString().split("T")[0],
         isNew: dateMs > 0 && now - dateMs < THREE_DAYS,
         link: a.link,

@@ -1,76 +1,129 @@
+import { useNavigate } from "react-router-dom";
 import { PROVIDERS } from "../data/providers";
-import ProviderBadge from "./ProviderBadge";
 
 function timeAgo(dateStr) {
   const now = new Date();
   const date = new Date(dateStr);
-  const days = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-  if (days === 0) return "Today";
+  const hours = Math.floor((now - date) / (1000 * 60 * 60));
+  if (hours < 1) return "Just now";
+  if (hours < 24) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+  const days = Math.floor(hours / 24);
   if (days === 1) return "Yesterday";
   if (days < 7) return `${days} days ago`;
   if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? "s" : ""} ago`;
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export default function UpdateCard({ update }) {
+function readingTime(text) {
+  const words = (text || "").split(/\s+/).length;
+  const mins = Math.max(1, Math.round(words / 200));
+  return `${mins} min read`;
+}
+
+export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
   const provider = PROVIDERS[update.provider];
+  const navigate = useNavigate();
+
+  const handleClick = (e) => {
+    if (e.target.closest("[data-bookmark]")) return;
+    navigate(`/article/${update.id}`);
+  };
 
   return (
     <div
-      className="relative bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 group"
+      onClick={handleClick}
+      className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-md transition-all duration-200 group cursor-pointer"
       style={{ borderLeftWidth: "4px", borderLeftColor: provider?.color }}
     >
-      {update.isNew && (
-        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide animate-pulse">
-          New
-        </span>
-      )}
-
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <ProviderBadge provider={update.provider} />
-          {update.isLive && (
-            <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-              <span className="w-1 h-1 bg-green-500 rounded-full" />
-              LIVE
+      <div className="flex gap-4 p-4">
+        {/* Provider logo thumbnail */}
+        <div
+          className="w-20 h-20 rounded-xl flex items-center justify-center shrink-0"
+          style={{ backgroundColor: provider?.bgColor || "#f3f4f6" }}
+        >
+          {provider?.logo ? (
+            <img
+              src={provider.logo}
+              alt={provider.name}
+              className="w-10 h-10 object-contain"
+              style={{ filter: "grayscale(100%) opacity(0.6)" }}
+            />
+          ) : (
+            <span
+              className="text-2xl font-bold"
+              style={{ color: provider?.color, opacity: 0.6 }}
+            >
+              {provider?.name?.charAt(0)}
             </span>
           )}
         </div>
-        <span className="text-xs text-gray-400">{timeAgo(update.date)}</span>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
+                <span className="font-medium text-gray-500">
+                  {provider?.name}
+                </span>
+                <span>·</span>
+                <span>{timeAgo(update.date)}</span>
+                <span>·</span>
+                <span>{readingTime(update.summary)}</span>
+              </div>
+              <h3 className="text-[15px] font-bold text-gray-900 leading-snug group-hover:text-gray-700">
+                {update.headline}
+              </h3>
+            </div>
+
+            {/* Bookmark button */}
+            <button
+              data-bookmark
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleBookmark();
+              }}
+              className={`p-1 transition-colors cursor-pointer shrink-0 mt-0.5 ${
+                bookmarked ? "text-blue-500" : "text-gray-300 hover:text-gray-500"
+              }`}
+            >
+              <svg
+                className="w-5 h-5"
+                fill={bookmarked ? "currentColor" : "none"}
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <h3 className="text-base font-bold text-gray-900 mb-2 leading-snug group-hover:text-gray-700">
-        {update.headline}
-      </h3>
-
-      {update.description && (
-        <p className="text-sm text-gray-500 italic mb-2">{update.description}</p>
+      {/* Description below divider */}
+      {(update.description || update.summary) && (
+        <div className="px-4 pb-4">
+          <div className="border-t border-gray-100 pt-3 ml-24">
+            <p className="text-sm text-gray-400 leading-relaxed">
+              {(() => {
+                const text = update.description || update.summary.split("\n")[0];
+                // If text ends with "..." it's truncated — trim to last complete sentence
+                if (text.endsWith("...") || text.endsWith("…")) {
+                  const clean = text.replace(/\.{3}$|…$/, "");
+                  const lastDot = clean.lastIndexOf(".");
+                  if (lastDot > 20) return clean.slice(0, lastDot + 1);
+                }
+                return text;
+              })()}
+            </p>
+          </div>
+        </div>
       )}
-
-      <div className="text-sm text-gray-600 leading-relaxed mb-3">
-        {update.summary.split("\n").map((line, i) => (
-          <p key={i} className={line.startsWith("TL;DR:") ? "font-semibold text-gray-800 mb-1" : line.startsWith("•") ? "ml-2" : ""}>
-            {line}
-          </p>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between">
-        {update.link && (
-          <a
-            href={update.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-medium hover:underline"
-            style={{ color: provider?.color }}
-          >
-            {update.source ? `Read on ${update.source}` : "Read source"}
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
-        )}
-      </div>
     </div>
   );
 }

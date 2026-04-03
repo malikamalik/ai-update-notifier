@@ -1,5 +1,5 @@
-// Client-side: just calls /api/news which handles everything server-side
-// (fetching, filtering, deduplication, and article summary enrichment)
+// Client-side: tries /api/articles (Firestore, has AI summaries) first,
+// falls back to /api/news (live RSS) if Firestore endpoint is unavailable.
 const FETCH_TIMEOUT = 15000;
 
 function fetchWithTimeout(url, ms) {
@@ -10,13 +10,29 @@ function fetchWithTimeout(url, ms) {
   );
 }
 
-function getApiUrl() {
-  const base = import.meta.env.DEV ? "http://localhost:3000" : "";
-  return `${base}/api/articles`;
+function getBaseUrl() {
+  return import.meta.env.VITE_API_URL || "";
 }
 
 export async function fetchAllNews() {
-  const res = await fetchWithTimeout(getApiUrl(), FETCH_TIMEOUT);
+  const base = getBaseUrl();
+
+  // Try Firestore endpoint first (has AI-generated TL;DR + bullet summaries)
+  try {
+    const res = await fetchWithTimeout(base ? base : "/api/articles", FETCH_TIMEOUT);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === "ok" && data.articles?.length > 0) {
+        return data.articles;
+      }
+    }
+  } catch { /* fall through to /api/news */ }
+
+  // Fallback to live RSS endpoint
+  const fallbackUrl = base
+    ? base.replace(/\/api\/articles$/, "/api/news")
+    : "/api/news";
+  const res = await fetchWithTimeout(fallbackUrl, FETCH_TIMEOUT);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   if (data.status !== "ok") throw new Error(data.error || "API error");
