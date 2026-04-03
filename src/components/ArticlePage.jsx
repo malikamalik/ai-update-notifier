@@ -10,9 +10,9 @@ function formatDate(dateStr) {
   });
 }
 
-/** Parse AI-generated summary (TL;DR + bullets) or generate from available text. */
-function parseSummary(summary, headline) {
-  if (!summary) return { tldr: headline, points: [] };
+/** Parse AI-generated summary (TL;DR + bullets). Returns empty points if no AI summary. */
+function parseSummary(summary) {
+  if (!summary) return { tldr: "", points: [] };
 
   const lines = summary.split("\n").map((l) => l.trim()).filter(Boolean);
 
@@ -21,88 +21,31 @@ function parseSummary(summary, headline) {
   const bullets = lines.filter((l) => /^[•\-*]\s/.test(l));
 
   if (tldrLine && bullets.length > 0) {
-    const parsed = bullets.map((b) => b.replace(/^[•\-*]\s*/, "").trim());
-    // Pad to minimum 3 if AI returned fewer
-    while (parsed.length < 3) {
-      parsed.push("Read the full article for more details.");
-    }
     return {
       tldr: tldrLine.replace(/^TL;?DR:?\s*/i, "").trim(),
-      points: parsed,
+      points: bullets.map((b) => b.replace(/^[•\-*]\s*/, "").trim()),
     };
   }
 
-  // Split by sentences
-  const sentences = summary
-    .replace(/\.{3}$|…$/, "") // remove trailing ellipsis
+  // Try splitting multi-sentence summaries
+  const clean = summary.replace(/\.{3}$|…$/, "");
+  const sentences = clean
     .replace(/([.!?])\s+/g, "$1|SPLIT|")
     .split("|SPLIT|")
     .map((s) => s.trim())
-    .filter((s) => s.length > 15);
+    .filter((s) => s.length > 20);
+
+  if (sentences.length >= 4) {
+    return { tldr: sentences[0], points: sentences.slice(1, 5) };
+  }
 
   if (sentences.length >= 2) {
-    const pts = sentences.slice(1, 5);
-    while (pts.length < 3) pts.push("Read the full article for more details.");
-    return { tldr: sentences[0], points: pts };
+    return { tldr: sentences[0], points: sentences.slice(1) };
   }
 
-  // Split by dashes/semicolons
-  const parts = summary
-    .replace(/\.{3}$|…$/, "")
-    .split(/\s[—–]\s|;\s|,\s(?=[A-Z])/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 15);
-
-  if (parts.length >= 3) {
-    return {
-      tldr: parts[0].replace(/\.$/, "") + ".",
-      points: parts.slice(1, 5).map((p) => p.replace(/\.$/, "") + "."),
-    };
-  }
-
-  // Last resort: use the summary as TL;DR, generate contextual points from headline
-  const clean = (sentences[0] || summary).replace(/\.{3}$|…$/, "").trim();
-  const tldr = clean.endsWith(".") ? clean : clean + ".";
-
-  // Extract contextual points from headline keywords
-  const points = [];
-  const h = headline.toLowerCase();
-  if (h.includes("launch") || h.includes("release") || h.includes("introduces"))
-    points.push("New product or feature officially announced.");
-  if (h.includes("ai") || h.includes("model"))
-    points.push("Advances in AI technology or model capabilities.");
-  if (h.includes("enterprise") || h.includes("business") || h.includes("firm") || h.includes("service"))
-    points.push("Targeted at business and enterprise use cases.");
-  if (h.includes("open") || h.includes("free") || h.includes("apache"))
-    points.push("Available as open-source or free to use.");
-  if (h.includes("update") || h.includes("upgrade") || h.includes("improve"))
-    points.push("Improvement or upgrade to an existing product.");
-  if (h.includes("voice") || h.includes("speech") || h.includes("audio"))
-    points.push("Includes voice or audio capabilities.");
-  if (h.includes("code") || h.includes("developer") || h.includes("coding") || h.includes("agent"))
-    points.push("Focused on developer tools and coding workflows.");
-  if (h.includes("security") || h.includes("privacy"))
-    points.push("Addresses security or privacy concerns.");
-  if (h.includes("mobile") || h.includes("phone") || h.includes("app"))
-    points.push("Available on mobile platforms.");
-  if (h.includes("browser") || h.includes("search") || h.includes("web"))
-    points.push("Integrates with web browsing or search.");
-  if (h.includes("image") || h.includes("video") || h.includes("visual"))
-    points.push("Includes visual or media generation features.");
-  if (h.includes("health") || h.includes("medical"))
-    points.push("Applied to healthcare or medical use cases.");
-
-  // Ensure minimum 3 points with general fallbacks
-  const fallbacks = [
-    "Read the full article for detailed specifications and availability.",
-    "May impact how users interact with AI-powered tools.",
-    "Part of the broader trend in AI product development.",
-  ];
-  while (points.length < 3) {
-    points.push(fallbacks[points.length]);
-  }
-
-  return { tldr, points: points.slice(0, 4) };
+  // Single sentence — just use as TL;DR, no fake bullets
+  const text = (sentences[0] || summary).replace(/\.{3}$|…$/, "").trim();
+  return { tldr: text.endsWith(".") ? text : text + ".", points: [] };
 }
 
 export default function ArticlePage({ allUpdates }) {
@@ -128,7 +71,7 @@ export default function ArticlePage({ allUpdates }) {
   }
 
   const provider = PROVIDERS[update.provider];
-  const { tldr, points } = parseSummary(update.summary, update.headline);
+  const { tldr, points } = parseSummary(update.summary);
 
   // Show description only if it's meaningfully different from TL;DR
   const desc = update.description || "";

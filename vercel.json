@@ -3,7 +3,8 @@
     { "path": "/api/cron/daily-news", "schedule": "0 8 * * *" }
   ],
   "functions": {
-    "api/cron/daily-news.js": { "maxDuration": 60 }
+    "api/cron/daily-news.js": { "maxDuration": 60 },
+    "api/news.js": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },

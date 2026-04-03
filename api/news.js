@@ -4,6 +4,18 @@
 import { fetchAndFilterArticles, extractArticleText } from "./lib/newsCore.js";
 import { generateSummary, deduplicateByContent } from "./lib/openrouter.js";
 
+const BATCH_SIZE = 5;
+
+async function processInBatches(items, size, fn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += size) {
+    const batch = items.slice(i, i + size);
+    const batchResults = await Promise.allSettled(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET");
@@ -11,41 +23,53 @@ export default async function handler(req, res) {
 
   try {
     let articles = await fetchAndFilterArticles();
+    console.log(`[news] Fetched ${articles.length} articles`);
 
     const now = Date.now();
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
-    // Step 1: AI content dedup — remove articles covering the same announcement
+    // Step 1: AI content dedup
     if (articles.length > 1) {
-      const headlines = articles.map((a) => a.headline);
-      const toRemove = await deduplicateByContent(headlines, []);
-      if (toRemove.length > 0) {
-        const removeSet = new Set(toRemove);
-        articles = articles.filter((_, i) => !removeSet.has(i));
+      try {
+        const headlines = articles.map((a) => a.headline);
+        const toRemove = await deduplicateByContent(headlines, []);
+        if (toRemove.length > 0) {
+          const removeSet = new Set(toRemove);
+          articles = articles.filter((_, i) => !removeSet.has(i));
+          console.log(`[news] Dedup removed ${toRemove.length}, ${articles.length} remaining`);
+        }
+      } catch (e) {
+        console.warn("[news] Dedup failed:", e.message);
       }
     }
 
-    // Step 2: Enrich top articles with AI summaries
-    const enriched = await Promise.allSettled(
-      articles.slice(0, 10).map(async (a) => {
-        try {
-          const fullText = await extractArticleText(a.link);
-          if (fullText) {
-            const aiSummary = await generateSummary(fullText, a.headline, a.link);
-            if (aiSummary) return { ...a, aiSummary };
-          }
-        } catch { /* use RSS summary as fallback */ }
-        return a;
-      })
-    );
+    // Step 2: Extract article text + generate AI summaries in batches
+    const enrichResults = await processInBatches(articles, BATCH_SIZE, async (article) => {
+      try {
+        const fullText = await extractArticleText(article.link);
+        if (!fullText) {
+          console.warn(`[news] No text extracted for: ${article.headline.slice(0, 50)}`);
+          return article;
+        }
+        const aiSummary = await generateSummary(fullText, article.headline, article.link);
+        if (aiSummary) {
+          console.log(`[news] AI summary for: ${article.headline.slice(0, 50)}`);
+          return { ...article, aiSummary };
+        }
+      } catch (e) {
+        console.warn(`[news] Enrich failed for "${article.headline.slice(0, 40)}": ${e.message}`);
+      }
+      return article;
+    });
 
-    const enrichedArticles = enriched
+    const enrichedArticles = enrichResults
       .filter((r) => r.status === "fulfilled")
       .map((r) => r.value);
 
-    const remaining = articles.slice(10);
+    const aiCount = enrichedArticles.filter((a) => a.aiSummary).length;
+    console.log(`[news] ${aiCount}/${enrichedArticles.length} articles enriched with AI`);
 
-    const results = [...enrichedArticles, ...remaining].map((a, i) => {
+    const results = enrichedArticles.map((a, i) => {
       const dateMs = a.date ? new Date(a.date).getTime() : 0;
       return {
         id: `live-${a.provider}-${i}-${now}`,
