@@ -86,18 +86,6 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
               </svg>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-gray-400">
-            {lastRefresh ? (
-              <span>Updated {formatLastUpdated(lastRefresh)}</span>
-            ) : (
-              <span>Loading...</span>
-            )}
-            <span className="w-1 h-1 rounded-full bg-gray-300" />
-            <span className="inline-flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
-              Live
-            </span>
-          </div>
         </div>
 
         {/* Filter Bar */}
