@@ -377,8 +377,21 @@ export async function extractArticleText(url) {
   }
 }
 
+// Generic/placeholder images to reject
+const JUNK_IMAGES = [
+  "lh3.googleusercontent.com/J6_coFb",
+  "lh3.googleusercontent.com/proxy",
+  "news.google.com",
+  "bing.com/th",
+  "default_image",
+  "placeholder",
+  "no-image",
+];
+
 export async function extractArticleImage(url) {
   if (url.includes("msn.com")) return null;
+  // Skip Google News redirect URLs — they return Google's placeholder
+  if (url.includes("news.google.com")) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT);
@@ -394,19 +407,21 @@ export async function extractArticleImage(url) {
 
     const html = await res.text();
 
+    const isJunk = (imgUrl) => !imgUrl || JUNK_IMAGES.some((j) => imgUrl.includes(j));
+
     // Try og:image meta tag first
     const ogMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
       || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i);
-    if (ogMatch) return ogMatch[1];
+    if (ogMatch && !isJunk(ogMatch[1])) return ogMatch[1];
 
     // Try twitter:image
     const twMatch = html.match(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i)
       || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']twitter:image["']/i);
-    if (twMatch) return twMatch[1];
+    if (twMatch && !isJunk(twMatch[1])) return twMatch[1];
 
     // Try article-extractor
     const article = await extractFromHtml(html, url);
-    if (article?.image) return article.image;
+    if (article?.image && !isJunk(article.image)) return article.image;
 
     return null;
   } catch {
