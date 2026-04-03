@@ -10,15 +10,14 @@ function formatDate(dateStr) {
   });
 }
 
-/** Parse AI-generated summary (TL;DR + bullets) or plain text summary. */
-function parseSummary(summary) {
-  if (!summary) return { tldr: "", points: [] };
+/** Parse AI-generated summary (TL;DR + bullets) or generate from available text. */
+function parseSummary(summary, headline) {
+  if (!summary) return { tldr: headline, points: [] };
 
   const lines = summary.split("\n").map((l) => l.trim()).filter(Boolean);
 
-  // Look for TL;DR line
+  // Look for AI-generated TL;DR + bullet points
   const tldrLine = lines.find((l) => /^TL;?DR:?\s/i.test(l));
-  // Look for bullet points (• or - at start)
   const bullets = lines.filter((l) => /^[•\-*]\s/.test(l));
 
   if (tldrLine && bullets.length > 0) {
@@ -28,8 +27,9 @@ function parseSummary(summary) {
     };
   }
 
-  // Fallback: split by sentences
+  // Split by sentences
   const sentences = summary
+    .replace(/\.{3}$|…$/, "") // remove trailing ellipsis
     .replace(/([.!?])\s+/g, "$1|SPLIT|")
     .split("|SPLIT|")
     .map((s) => s.trim())
@@ -39,9 +39,10 @@ function parseSummary(summary) {
     return { tldr: sentences[0], points: sentences.slice(1, 5) };
   }
 
-  // Try splitting by dashes
+  // Split by dashes/semicolons
   const parts = summary
-    .split(/\s[—–]\s|;\s/)
+    .replace(/\.{3}$|…$/, "")
+    .split(/\s[—–]\s|;\s|,\s(?=[A-Z])/)
     .map((s) => s.trim())
     .filter((s) => s.length > 15);
 
@@ -52,7 +53,33 @@ function parseSummary(summary) {
     };
   }
 
-  return { tldr: sentences[0] || summary, points: [] };
+  // Last resort: use the summary as TL;DR, generate contextual points from headline
+  const clean = (sentences[0] || summary).replace(/\.{3}$|…$/, "").trim();
+  const tldr = clean.endsWith(".") ? clean : clean + ".";
+
+  // Extract what we can from the headline to make useful points
+  const points = [];
+  const h = headline.toLowerCase();
+  if (h.includes("launch") || h.includes("release") || h.includes("introduces"))
+    points.push("New product or feature announced.");
+  if (h.includes("ai") || h.includes("model"))
+    points.push("Involves AI technology or model capabilities.");
+  if (h.includes("enterprise") || h.includes("business") || h.includes("firm") || h.includes("service"))
+    points.push("Targeted at business and enterprise use cases.");
+  if (h.includes("open") || h.includes("free") || h.includes("apache"))
+    points.push("Available as open-source or free to use.");
+  if (h.includes("update") || h.includes("upgrade") || h.includes("improve"))
+    points.push("Improvement to an existing product.");
+  if (h.includes("voice") || h.includes("speech") || h.includes("audio"))
+    points.push("Includes voice or audio capabilities.");
+  if (h.includes("code") || h.includes("developer") || h.includes("coding"))
+    points.push("Focused on developer tools and coding.");
+  if (h.includes("security") || h.includes("privacy"))
+    points.push("Addresses security or privacy concerns.");
+  if (h.includes("mobile") || h.includes("phone") || h.includes("app"))
+    points.push("Available on mobile platforms.");
+
+  return { tldr, points: points.slice(0, 3) };
 }
 
 export default function ArticlePage({ allUpdates }) {
@@ -78,7 +105,7 @@ export default function ArticlePage({ allUpdates }) {
   }
 
   const provider = PROVIDERS[update.provider];
-  const { tldr, points } = parseSummary(update.summary);
+  const { tldr, points } = parseSummary(update.summary, update.headline);
 
   // Show description only if it's meaningfully different from TL;DR
   const desc = update.description || "";
