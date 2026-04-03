@@ -120,7 +120,7 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
       {(update.description || update.summary) && (
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3">
-            <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
+            <p className="text-[13px] text-gray-400 leading-relaxed">
               {(() => {
                 // Prefer AI summary's TL;DR over truncated RSS description
                 const summary = update.summary || "";

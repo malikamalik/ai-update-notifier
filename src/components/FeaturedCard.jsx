@@ -91,7 +91,7 @@ export default function FeaturedCard({ update }) {
       {/* Description below the card */}
       {update.summary && (
         <div className="mt-2 px-5 py-3 bg-white rounded-xl border border-gray-100">
-          <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
+          <p className="text-[13px] text-gray-400 leading-relaxed">
             {(() => {
               const summary = update.summary || "";
               const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
