@@ -66,14 +66,14 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
 
         {featured && (
           <section className="mb-4">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">New AI Signals</h2>
+            <h2 className="text-xl font-medium text-gray-900 mb-4">New AI Signals</h2>
             <FeaturedCard update={featured} />
           </section>
         )}
 
         <section>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">
+            <h2 className="text-xl font-medium text-gray-900">
               {showBookmarks ? "Bookmarks" : "All Signals"}
             </h2>
             <button

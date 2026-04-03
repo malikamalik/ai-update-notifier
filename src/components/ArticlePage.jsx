@@ -123,7 +123,7 @@ export default function ArticlePage({ allUpdates }) {
             <span className="text-sm text-gray-400">{formatDate(update.date)}</span>
           </div>
 
-          <h1 className="text-[28px] font-bold text-gray-900 leading-tight mb-4">
+          <h1 className="text-[28px] font-medium text-gray-900 leading-tight mb-4">
             {update.headline}
           </h1>
 

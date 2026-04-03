@@ -61,7 +61,7 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
             />
           ) : (
             <span
-              className="text-xl font-bold"
+              className="text-xl font-medium"
               style={{ color: provider?.color, opacity: 0.5 }}
             >
               {provider?.name?.charAt(0)}
@@ -82,7 +82,7 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
                 <span>&middot;</span>
                 <span>{readingTime(update.summary)}</span>
               </div>
-              <h3 className="text-[15px] font-semibold text-gray-900 leading-snug group-hover:text-gray-700">
+              <h3 className="text-[15px] font-medium text-gray-900 leading-snug group-hover:text-gray-700">
                 {update.headline}
               </h3>
             </div>

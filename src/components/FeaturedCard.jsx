@@ -71,14 +71,14 @@ export default function FeaturedCard({ update }) {
             <span>&middot;</span>
             <span>{formatDate(update.date)}</span>
           </div>
-          <h3 className="text-white text-lg font-bold leading-snug pr-28 group-hover:underline">
+          <h3 className="text-white text-lg font-medium leading-snug pr-28 group-hover:underline">
             {update.headline}
           </h3>
         </div>
 
         {/* Provider badge */}
         <div className="absolute bottom-4 right-4">
-          <span className="inline-flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-semibold text-gray-800">
+          <span className="inline-flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-medium text-gray-800">
             <span
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: provider?.color }}
