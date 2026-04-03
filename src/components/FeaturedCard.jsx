@@ -92,7 +92,18 @@ export default function FeaturedCard({ update }) {
       {update.summary && (
         <div className="mt-2 px-5 py-3 bg-white rounded-xl border border-gray-100">
           <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
-            {update.description || update.summary.split("\n")[0]}
+            {(() => {
+              const summary = update.summary || "";
+              const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
+              if (tldrMatch) return tldrMatch[1].trim();
+              const text = update.description || summary.split("\n")[0];
+              if (text.endsWith("...") || text.endsWith("\u2026")) {
+                const clean = text.replace(/\.{3}$|\u2026$/, "");
+                const lastDot = clean.lastIndexOf(".");
+                if (lastDot > 20) return clean.slice(0, lastDot + 1);
+              }
+              return text;
+            })()}
           </p>
         </div>
       )}

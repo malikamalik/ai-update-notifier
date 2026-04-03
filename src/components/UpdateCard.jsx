@@ -121,7 +121,20 @@ export default function UpdateCard({ update, bookmarked, onToggleBookmark }) {
         <div className="px-4 pb-4">
           <div className="border-t border-gray-100 pt-3">
             <p className="text-[13px] text-gray-400 leading-relaxed line-clamp-2">
-              {update.description || update.summary.split("\n")[0]}
+              {(() => {
+                // Prefer AI summary's TL;DR over truncated RSS description
+                const summary = update.summary || "";
+                const tldrMatch = summary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
+                if (tldrMatch) return tldrMatch[1].trim();
+                // Otherwise use description, trimmed to last complete sentence
+                const text = update.description || summary.split("\n")[0];
+                if (text.endsWith("...") || text.endsWith("\u2026")) {
+                  const clean = text.replace(/\.{3}$|\u2026$/, "");
+                  const lastDot = clean.lastIndexOf(".");
+                  if (lastDot > 20) return clean.slice(0, lastDot + 1);
+                }
+                return text;
+              })()}
             </p>
           </div>
         </div>
