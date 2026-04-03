@@ -43,7 +43,19 @@ function saveBookmarks(bookmarks) {
   } catch { /* localStorage full or unavailable */ }
 }
 
-function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggleBookmark }) {
+function formatLastUpdated(date) {
+  if (!date) return "";
+  const now = new Date();
+  const diff = now - date;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggleBookmark, loading, lastRefresh, refreshNews }) {
   const [showBookmarks, setShowBookmarks] = useState(false);
   const activeProviders = new Set(allUpdates.map((u) => u.provider));
 
@@ -57,28 +69,73 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
     ? filteredUpdates.filter((u) => bookmarks.has(String(u.id)))
     : filteredUpdates.slice(1);
 
+  const articleCount = allUpdates.length;
+  const providerCount = new Set(allUpdates.map((u) => u.provider)).size;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="max-w-3xl mx-auto px-4 py-6">
-        <div className="mb-8">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-2xl font-medium text-gray-900 tracking-tight">AI Signals</h1>
+            <div className="flex items-center gap-3">
+              {loading && (
+                <svg className="w-4 h-4 text-gray-300 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              )}
+              <button
+                onClick={refreshNews}
+                disabled={loading}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 cursor-pointer"
+                title="Refresh"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <span>{articleCount} articles from {providerCount} providers</span>
+            <span className="w-1 h-1 rounded-full bg-gray-300" />
+            {lastRefresh ? (
+              <span>Updated {formatLastUpdated(lastRefresh)}</span>
+            ) : (
+              <span>Loading...</span>
+            )}
+            <span className="w-1 h-1 rounded-full bg-gray-300" />
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full" />
+              Live
+            </span>
+          </div>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="mb-6">
           <FilterBar activeFilter={activeFilter} onFilterChange={(f) => { setActiveFilter(f); setShowBookmarks(false); }} activeProviders={activeProviders} />
         </div>
 
+        {/* Featured */}
         {featured && (
           <section className="mb-4">
-            <h2 className="text-xl font-medium text-gray-900 mb-4">New AI Signals</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-3">New AI Signals</h2>
             <FeaturedCard update={featured} />
           </section>
         )}
 
+        {/* All Signals */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-medium text-gray-900">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-medium text-gray-900">
               {showBookmarks ? "Bookmarks" : "All Signals"}
             </h2>
             <button
               onClick={() => setShowBookmarks(!showBookmarks)}
-              className={`text-sm font-medium cursor-pointer transition-colors ${
+              className={`text-xs font-medium cursor-pointer transition-colors ${
                 showBookmarks ? "text-blue-600" : "text-gray-400 hover:text-gray-600"
               }`}
             >
@@ -86,7 +143,7 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
             </button>
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {restUpdates.length > 0 ? (
               restUpdates.map((update) => (
                 <UpdateCard
@@ -105,6 +162,16 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
             )}
           </div>
         </section>
+
+        {/* Footer */}
+        <footer className="mt-10 pt-6 border-t border-gray-100 text-center">
+          <p className="text-[11px] text-gray-300">
+            AI Signals — Tracking updates from {providerCount}+ AI providers
+          </p>
+          <p className="text-[11px] text-gray-300 mt-0.5">
+            Refreshes every 12 hours
+          </p>
+        </footer>
       </main>
     </div>
   );
@@ -172,7 +239,6 @@ function App() {
   const allUpdates = [...liveUpdates, ...staticUpdates].reduce(
     (acc, update) => {
       const h = update.headline.toLowerCase();
-      // Extract 2-word phrases from headline for matching
       const getPhrases = (s) => {
         const words = s.match(/\b[a-z0-9]+\b/g) || [];
         const phrases = new Set();
@@ -182,25 +248,19 @@ function App() {
         return phrases;
       };
       const phrases = getPhrases(h);
-
       const isDupe = acc.some((existing) => {
         const eh = existing.headline.toLowerCase();
         if (eh.slice(0, 50) === h.slice(0, 50)) return true;
-
-        // Shared 2-word phrases between headlines (e.g. "gemma 4", "chatgpt voice")
         const ePhrases = getPhrases(eh);
         let shared = 0;
         let hasVersionMatch = false;
         for (const p of phrases) {
           if (ePhrases.has(p)) {
             shared++;
-            // A phrase with a number is a product version (gemma 4, gpt 5, gemini 3)
             if (/\d/.test(p)) hasVersionMatch = true;
           }
         }
-        // Same story if: any product+version phrase matches, OR 3+ generic bigrams match
         if (hasVersionMatch || shared >= 3) return true;
-
         return false;
       });
       if (!isDupe) acc.push(update);
@@ -222,6 +282,9 @@ function App() {
             setActiveFilter={setActiveFilter}
             bookmarks={bookmarks}
             toggleBookmark={toggleBookmark}
+            loading={loading}
+            lastRefresh={lastRefresh}
+            refreshNews={refreshNews}
           />
         }
       />
