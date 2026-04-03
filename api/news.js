@@ -2,7 +2,7 @@
 // extracts article text, generates AI summaries, and deduplicates by content.
 
 import { fetchAndFilterArticles, extractArticleText, extractArticleImage } from "./lib/newsCore.js";
-import { generateSummary } from "./lib/openrouter.js";
+import { generateSummary, fixTruncatedDescription } from "./lib/openrouter.js";
 
 const BATCH_SIZE = 5;
 
@@ -49,7 +49,13 @@ export default async function handler(req, res) {
         if (aiSummary) {
           console.log(`[news] AI summary for: ${article.headline.slice(0, 50)}`);
         }
-        return { ...article, aiSummary: aiSummary || null, image: image || null };
+        // Fix truncated descriptions
+        let description = article.summary;
+        if (description && (description.endsWith("...") || description.endsWith("\u2026"))) {
+          description = await fixTruncatedDescription(description, article.headline);
+        }
+
+        return { ...article, summary: description, aiSummary: aiSummary || null, image: image || null };
       } catch (e) {
         console.warn(`[news] Enrich failed for "${article.headline.slice(0, 40)}": ${e.message}`);
       }

@@ -157,6 +157,7 @@ export function isFeatureArticle(title, description) {
 
 // ── Dedup by product topic ──────────────────────────────────────────
 const PRODUCT_PATTERNS = [
+  /\b(gemma\s+[\d.]+\w*)/i,
   /\b(gemini\s+[\d.]+\s*(?:pro|flash|ultra|deep\s*think)?)/i,
   /\b(claude\s+(?:sonnet|opus|haiku|code\s+security|code|cowork)\s*[\d.]*)/i,
   /\b(gpt[-\s]?[\d.]+\w*)/i,
@@ -222,16 +223,15 @@ export function deduplicateArticles(articles) {
       extractProductTopic(article.headline) ||
       extractProductTopic(article.summary || "");
 
+    // Dedup by product topic globally (not per-provider) — e.g. only one "Gemma 4" article
     if (topic) {
-      const key = `${article.provider}::${topic}`;
-      if (seenTopics.has(key)) continue;
-      seenTopics.add(key);
+      if (seenTopics.has(topic)) continue;
+      seenTopics.add(topic);
     }
 
+    // Also catch near-duplicate headlines across all providers
     const isDupe = unique.some(
-      (u) =>
-        u.provider === article.provider &&
-        wordOverlap(article.headline, u.headline) >= 0.4
+      (u) => wordOverlap(article.headline, u.headline) >= 0.35
     );
     if (isDupe) continue;
 
@@ -325,6 +325,14 @@ export function cleanSummary(summary) {
       return firstSentence[1];
     }
     return null;
+  }
+  // If the description is truncated (ends with "..." or "…"), cut back to last complete sentence
+  if (cleaned.endsWith("...") || cleaned.endsWith("\u2026")) {
+    const trimmed = cleaned.replace(/\.{3}$|\u2026$/, "").trim();
+    const lastSentenceEnd = trimmed.search(/[.!?]\s[^.!?]*$/);
+    if (lastSentenceEnd > 20) {
+      return trimmed.slice(0, lastSentenceEnd + 1);
+    }
   }
   return cleaned;
 }
