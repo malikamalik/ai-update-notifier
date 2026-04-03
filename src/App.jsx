@@ -68,7 +68,7 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
   const featuredUpdates = showFeatured ? filteredUpdates.slice(0, 5) : [];
   const restUpdates = showBookmarks
     ? filteredUpdates.filter((u) => bookmarks.has(String(u.id)))
-    : showFeatured ? filteredUpdates.slice(5) : filteredUpdates;
+    : filteredUpdates;
 
   const articleCount = allUpdates.length;
   const providerCount = new Set(allUpdates.map((u) => u.provider)).size;
