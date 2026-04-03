@@ -99,8 +99,6 @@ function FeedPage({ allUpdates, activeFilter, setActiveFilter, bookmarks, toggle
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-400">
-            <span>{articleCount} articles from {providerCount} providers</span>
-            <span className="w-1 h-1 rounded-full bg-gray-300" />
             {lastRefresh ? (
               <span>Updated {formatLastUpdated(lastRefresh)}</span>
             ) : (
