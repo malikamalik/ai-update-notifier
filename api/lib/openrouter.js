@@ -6,18 +6,20 @@ const TIMEOUT = 20000;
 const MAX_RETRIES = 2;
 const RETRY_DELAYS = [1000, 2000];
 
-const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to write a punchy TL;DR of the given AI product article.
+const SYSTEM_PROMPT = `You summarize AI product news articles. You are given the article text directly — do NOT say you cannot access it.
 
 Rules:
 - Start with "TL;DR: " followed by a single concise sentence (max ~20 words) that captures the core news
-- Then add 3 short bullet points with key details, each starting with "• "
+- Then add exactly 3 bullet points with key details, each starting with "• "
 - Each bullet should be a brief phrase or single sentence — punchy and scannable
-- Cover: what it is, why it matters, and any key numbers/availability
-- Be factual and specific. Include names, numbers, and details from the article
-- Do NOT start with "The article discusses..." or similar meta-phrasing. Jump straight into the facts
+- Highlight the top 3 things from the article: what it is, key details/numbers, and availability or impact
+- ONLY use facts explicitly stated in the provided text. Never invent, assume, or fabricate details
+- If the provided text is short, write a shorter summary — but still only use what is given
+- Do NOT reference the article itself ("the article says...", "according to the article...")
+- Do NOT say you cannot access a URL or need more information
 - Do NOT include opinions or speculation
 - Do NOT use markdown formatting like ** or ## — just plain text
-- ALWAYS include exactly 3 bullet points`;
+- Jump straight into the facts`;
 
 async function callClaude(userContent, apiKey) {
   const controller = new AbortController();
@@ -158,9 +160,7 @@ export async function generateSummary(articleText, headline, articleUrl) {
     return null;
   }
 
-  let userContent = `Article headline: ${headline}\n`;
-  if (articleUrl) userContent += `Article URL: ${articleUrl}\n`;
-  userContent += `\nArticle content:\n${articleText.slice(0, 8000)}`;
+  let userContent = `Article headline: ${headline}\n\nArticle content:\n${articleText.slice(0, 8000)}`;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {

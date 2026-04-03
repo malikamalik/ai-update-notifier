@@ -37,8 +37,13 @@ export default async function handler(req, res) {
           extractArticleImage(article.link).catch(() => null),
         ]);
 
-        const inputText = text || `Headline: ${article.headline}\nDescription: ${article.summary}`;
-        if (!text) console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
+        let inputText;
+        if (text) {
+          inputText = text;
+        } else {
+          console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
+          inputText = `[Limited content — summarize ONLY what is stated below, do not add any other details]\n\n${article.summary}`;
+        }
 
         const aiSummary = await generateSummary(inputText, article.headline, article.link);
         if (aiSummary) {
