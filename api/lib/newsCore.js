@@ -379,13 +379,19 @@ export async function extractArticleText(url) {
 
 // Generic/placeholder images to reject
 const JUNK_IMAGES = [
-  "lh3.googleusercontent.com/J6_coFb",
-  "lh3.googleusercontent.com/proxy",
+  "lh3.googleusercontent.com",
   "news.google.com",
+  "google.com/logos",
+  "google.com/favicon",
+  "gstatic.com/kpui",
+  "gstatic.com/images",
   "bing.com/th",
   "default_image",
   "placeholder",
   "no-image",
+  "logo",
+  "favicon",
+  "icon",
 ];
 
 export async function extractArticleImage(url) {
@@ -407,7 +413,14 @@ export async function extractArticleImage(url) {
 
     const html = await res.text();
 
-    const isJunk = (imgUrl) => !imgUrl || JUNK_IMAGES.some((j) => imgUrl.includes(j));
+    const isJunk = (imgUrl) => {
+      if (!imgUrl) return true;
+      const lower = imgUrl.toLowerCase();
+      if (JUNK_IMAGES.some((j) => lower.includes(j))) return true;
+      // Reject tiny images (likely icons/favicons)
+      if (lower.includes("16x16") || lower.includes("32x32") || lower.includes("48x48")) return true;
+      return false;
+    };
 
     // Try og:image meta tag first
     const ogMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i)
