@@ -7,8 +7,8 @@ import FeaturedCard from "./components/FeaturedCard";
 import FilterBar from "./components/FilterBar";
 import ArticlePage from "./components/ArticlePage";
 
-const REFRESH_INTERVAL = 60 * 60 * 1000; // 1 hour
-const STALE_THRESHOLD = 30 * 60 * 1000; // 30 minutes
+const REFRESH_INTERVAL = 12 * 60 * 60 * 1000; // 12 hours
+const STALE_THRESHOLD = 6 * 60 * 60 * 1000; // 6 hours
 const CACHE_KEY = "ai-update-notifier-live";
 const BOOKMARKS_KEY = "ai-update-notifier-bookmarks";
 

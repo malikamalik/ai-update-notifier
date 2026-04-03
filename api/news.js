@@ -19,7 +19,7 @@ async function processInBatches(items, size, fn) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET");
-  res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+  res.setHeader("Cache-Control", "s-maxage=43200, stale-while-revalidate=3600"); // 12h cache, 1h stale
 
   try {
     let articles = await fetchAndFilterArticles();
