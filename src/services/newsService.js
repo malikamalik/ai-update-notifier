@@ -1,6 +1,6 @@
 // Client-side: tries /api/articles (Firestore, has AI summaries) first,
 // falls back to /api/news (live RSS) if Firestore endpoint is unavailable.
-const FETCH_TIMEOUT = 15000;
+const FETCH_TIMEOUT = 90000; // 90s — /api/news generates AI summaries which takes time
 
 function fetchWithTimeout(url, ms) {
   const controller = new AbortController();
