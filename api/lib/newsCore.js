@@ -523,7 +523,10 @@ export async function fetchAndFilterArticles() {
       if (!provider) continue;
       if (!isFeatureArticle(item.title, item.description)) continue;
 
-      const headline = item.title.replace(/ - .*$/, "").trim();
+      // Strip source suffixes: " - Source", " | Source", " — Source"
+      const headline = item.title
+        .replace(/\s+[-–—|]\s+[A-Z][\w\s.&',]+$/, "")
+        .trim();
       const summary = cleanSummary(item.description);
       if (!summary) continue;
 
