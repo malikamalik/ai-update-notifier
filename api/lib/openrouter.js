@@ -1,39 +1,41 @@
-// OpenRouter API wrapper for generating article summaries.
+// Claude API wrapper for generating article summaries.
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "google/gemini-2.5-flash-lite";
+const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const MODEL = "claude-haiku-4-5-20251001";
 const TIMEOUT = 20000;
-const MAX_RETRIES = 3;
-const RETRY_DELAYS = [1000, 2000, 4000]; // exponential backoff
+const MAX_RETRIES = 2;
+const RETRY_DELAYS = [1000, 2000];
 
 const SYSTEM_PROMPT = `You are a tech news article summarizer. Your job is to write a punchy TL;DR of the given AI product article.
 
 Rules:
 - Start with "TL;DR: " followed by a single concise sentence (max ~20 words) that captures the core news
-- Then add 2-3 short bullet points with key details, each starting with "• "
+- Then add 3 short bullet points with key details, each starting with "• "
 - Each bullet should be a brief phrase or single sentence — punchy and scannable
 - Cover: what it is, why it matters, and any key numbers/availability
 - Be factual and specific. Include names, numbers, and details from the article
 - Do NOT start with "The article discusses..." or similar meta-phrasing. Jump straight into the facts
 - Do NOT include opinions or speculation
-- Do NOT use markdown formatting like ** or ## — just plain text`;
+- Do NOT use markdown formatting like ** or ## — just plain text
+- ALWAYS include exactly 3 bullet points`;
 
-async function callOpenRouter(userContent, apiKey) {
+async function callClaude(userContent, apiKey) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT);
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: MODEL,
+        system: SYSTEM_PROMPT,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userContent },
         ],
         max_tokens: 400,
@@ -47,14 +49,14 @@ async function callOpenRouter(userContent, apiKey) {
     }
 
     const data = await res.json();
-    const summary = data.choices?.[0]?.message?.content?.trim() || null;
+    const summary = data.content?.[0]?.text?.trim() || null;
     if (!summary) throw new Error("Empty response from model");
 
     // Validate: must have TL;DR line and at least 2 bullets
     const hasTldr = /^TL;DR:/im.test(summary);
     const bulletCount = (summary.match(/^[•\-\*]/gm) || []).length;
     if (!hasTldr || bulletCount < 2) {
-      console.warn(`[openrouter] Missing TL;DR or only ${bulletCount} bullets, reformatting`);
+      console.warn(`[claude] Missing TL;DR or only ${bulletCount} bullets, reformatting`);
       const sentences = summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
       if (sentences.length >= 2) {
         const tldr = `TL;DR: ${sentences[0].replace(/^(TL;DR:\s*|[•\-\*]\s*)/i, "")}`;
@@ -71,23 +73,24 @@ async function callOpenRouter(userContent, apiKey) {
 }
 
 export async function fixTruncatedDescription(description, headline) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return description;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: MODEL,
+        system: "You rewrite truncated news descriptions into a single complete sentence. Output ONLY the sentence, nothing else. Keep it factual and under 40 words. No quotes, no markdown.",
         messages: [
-          { role: "system", content: "You rewrite truncated news descriptions into a single complete sentence. Output ONLY the sentence, nothing else. Keep it factual and under 40 words. No quotes, no markdown." },
           { role: "user", content: `Headline: ${headline}\nTruncated description: ${description}` },
         ],
         max_tokens: 100,
@@ -96,7 +99,7 @@ export async function fixTruncatedDescription(description, headline) {
     clearTimeout(timer);
     if (!res.ok) return description;
     const data = await res.json();
-    const fixed = data.choices?.[0]?.message?.content?.trim();
+    const fixed = data.content?.[0]?.text?.trim();
     return fixed && fixed.length > 20 ? fixed : description;
   } catch {
     clearTimeout(timer);
@@ -105,7 +108,7 @@ export async function fixTruncatedDescription(description, headline) {
 }
 
 export async function deduplicateByContent(newHeadlines, existingHeadlines) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey || newHeadlines.length === 0) return [];
 
   const existingList = existingHeadlines.map((h, i) => `E${i}: ${h}`).join("\n");
@@ -114,27 +117,22 @@ export async function deduplicateByContent(newHeadlines, existingHeadlines) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(ANTHROPIC_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [
-          {
-            role: "system",
-            content: `You identify duplicate news articles covering the same story/announcement.
+        system: `You identify duplicate news articles covering the same story/announcement.
 Given EXISTING articles (already stored) and NEW articles (candidates), find NEW articles that cover the same story as an EXISTING article OR as another NEW article.
 For NEW-vs-NEW duplicates, keep the one with the lower index.
 Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if no duplicates. No explanation.`,
-          },
-          {
-            role: "user",
-            content: `EXISTING:\n${existingList || "(none)"}\n\nNEW:\n${newList}`,
-          },
+        messages: [
+          { role: "user", content: `EXISTING:\n${existingList || "(none)"}\n\nNEW:\n${newList}` },
         ],
         max_tokens: 200,
       }),
@@ -142,7 +140,7 @@ Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if n
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content?.trim() || "[]";
+    const text = data.content?.[0]?.text?.trim() || "[]";
     const match = text.match(/\[[\d,\s]*\]/);
     if (!match) return [];
     const indices = JSON.parse(match[0]);
@@ -154,26 +152,28 @@ Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if n
 }
 
 export async function generateSummary(articleText, headline, articleUrl) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.warn("[claude] No ANTHROPIC_API_KEY set");
+    return null;
+  }
 
-  // Build the best possible context for the model
   let userContent = `Article headline: ${headline}\n`;
   if (articleUrl) userContent += `Article URL: ${articleUrl}\n`;
   userContent += `\nArticle content:\n${articleText.slice(0, 8000)}`;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const summary = await callOpenRouter(userContent, apiKey);
+      const summary = await callClaude(userContent, apiKey);
       return summary;
     } catch (err) {
-      console.error(`[openrouter] Attempt ${attempt + 1}/${MAX_RETRIES} failed: ${err.message}`);
+      console.error(`[claude] Attempt ${attempt + 1}/${MAX_RETRIES} failed: ${err.message}`);
       if (attempt < MAX_RETRIES - 1) {
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
       }
     }
   }
 
-  console.error(`[openrouter] All ${MAX_RETRIES} attempts failed for "${headline.slice(0, 50)}..."`);
+  console.error(`[claude] All ${MAX_RETRIES} attempts failed for "${headline.slice(0, 50)}..."`);
   return null;
 }
