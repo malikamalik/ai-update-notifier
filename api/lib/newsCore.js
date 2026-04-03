@@ -490,6 +490,12 @@ export async function fetchAndFilterArticles() {
       const headline = item.title.replace(/ - .*$/, "").trim();
       const summary = cleanSummary(item.description);
       if (!summary) continue;
+
+      // Skip articles older than 7 days
+      const articleDate = new Date(item.pubDate);
+      const ageMs = Date.now() - articleDate.getTime();
+      if (ageMs > 7 * 24 * 60 * 60 * 1000) continue;
+
       articles.push({
         headline,
         summary,
