@@ -1,10 +1,10 @@
-// /api/cron/daily-news — runs 4x/day via Vercel cron + external trigger.
+// /api/cron/daily-news — runs via external cron trigger (cron-jobs.org).
 // Fetches news, deduplicates against Firestore, extracts article text,
-// generates AI summaries via OpenRouter, and writes to Firestore.
+// generates AI summaries via Gemini, and writes to Firestore.
 
 import crypto from "crypto";
 import { db } from "../lib/firestore.js";
-import { fetchAndFilterArticles, extractArticleText } from "../lib/newsCore.js";
+import { fetchAndFilterArticles, extractArticleText, wordOverlap } from "../lib/newsCore.js";
 import { generateSummary, fixTruncatedDescription, deduplicateByContent } from "../lib/openrouter.js";
 import {
   collection, query, where, getDocs, orderBy, limit,
@@ -54,20 +54,39 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: "ok", processed: 0, skipped: 0 });
     }
 
-    // Step 2: Deduplicate against Firestore by URL
+    // Step 2: Deduplicate against Firestore by URL, headline, and provider
+    const articlesRef = collection(db, "articles");
+
+    // 2a: Exact URL match
     const urls = articles.map((a) => a.link);
     const existingUrls = new Set();
-
-    // Firestore 'in' queries support max 30 values — we have max 20, so one query is fine
-    const articlesRef = collection(db, "articles");
-    const q = query(articlesRef, where("url", "in", urls));
-    const snapshot = await getDocs(q);
-    snapshot.forEach((d) => {
+    const urlQuery = query(articlesRef, where("url", "in", urls));
+    const urlSnap = await getDocs(urlQuery);
+    urlSnap.forEach((d) => {
       const data = d.data();
       if (data.url) existingUrls.add(data.url);
     });
 
-    const newArticles = articles.filter((a) => !existingUrls.has(a.link));
+    // 2b: Fetch recent headlines for headline similarity check
+    const recentQuery = query(articlesRef, orderBy("createdAt", "desc"), limit(50));
+    const recentSnap = await getDocs(recentQuery);
+    const recentArticles = recentSnap.docs.map((d) => d.data());
+
+    const newArticles = articles.filter((a) => {
+      // Skip exact URL match
+      if (existingUrls.has(a.link)) return false;
+      // Skip if a recent Firestore article from the same provider has a similar headline
+      const isDupe = recentArticles.some(
+        (existing) =>
+          existing.provider === a.provider &&
+          wordOverlap(a.headline, existing.headline) >= 0.4
+      );
+      if (isDupe) {
+        console.log(`[cron] Headline dedup: "${a.headline.slice(0, 50)}..." matches existing`);
+      }
+      return !isDupe;
+    });
+
     console.log(`[cron] ${newArticles.length} new, ${articles.length - newArticles.length} already in Firestore`);
 
     if (newArticles.length === 0) {
@@ -101,11 +120,12 @@ export default async function handler(req, res) {
 
     const summaryResults = await processInBatches(enrichedArticles, BATCH_SIZE, async (article) => {
       if (timeRemaining() < 5000) return article; // skip if running low
+      const inputText = article.fullText
+        || `Headline: ${article.headline}\nDescription: ${article.summary}`;
       if (!article.fullText) {
-        console.warn(`[cron] No extracted text for "${article.headline.slice(0, 50)}...", skipping summary`);
-        return article;
+        console.warn(`[cron] No extracted text for "${article.headline.slice(0, 50)}...", using RSS fallback`);
       }
-      const aiSummary = await generateSummary(article.fullText, article.headline, article.link);
+      const aiSummary = await generateSummary(inputText, article.headline, article.link);
       console.log(`[cron] Summary for "${article.headline.slice(0, 50)}..." → ${aiSummary ? aiSummary.length + " chars" : "FAILED"}`);
       return { ...article, aiSummary };
     });

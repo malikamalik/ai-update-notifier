@@ -205,7 +205,7 @@ function wordSet(text) {
   );
 }
 
-function wordOverlap(a, b) {
+export function wordOverlap(a, b) {
   const setA = wordSet(a);
   const setB = wordSet(b);
   if (setA.size === 0 || setB.size === 0) return 0;

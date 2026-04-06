@@ -1,8 +1,4 @@
 {
-  "crons": [
-    { "path": "/api/cron/daily-news", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/daily-news", "schedule": "0 16 * * *" }
-  ],
   "functions": {
     "api/cron/daily-news.js": { "maxDuration": 60 },
     "api/news.js": { "maxDuration": 60 }

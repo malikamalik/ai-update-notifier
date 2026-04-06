@@ -1,7 +1,6 @@
-// Claude API wrapper for generating article summaries.
+// Gemini API wrapper for generating article summaries.
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-haiku-4-5-20251001";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 const TIMEOUT = 20000;
 const MAX_RETRIES = 2;
 const RETRY_DELAYS = [1000, 2000];
@@ -21,27 +20,31 @@ Rules:
 - Do NOT use markdown formatting like ** or ## — just plain text
 - Jump straight into the facts`;
 
-async function callClaude(userContent, apiKey) {
+function geminiBody(systemPrompt, userContent, maxTokens) {
+  return {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: "user", parts: [{ text: userContent }] }],
+    generationConfig: { maxOutputTokens: maxTokens },
+  };
+}
+
+function extractGeminiText(data) {
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+}
+
+async function callGemini(userContent, apiKey) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT);
 
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetch(GEMINI_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "x-goog-api-key": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: MODEL,
-        system: SYSTEM_PROMPT,
-        messages: [
-          { role: "user", content: userContent },
-        ],
-        max_tokens: 400,
-      }),
+      body: JSON.stringify(geminiBody(SYSTEM_PROMPT, userContent, 400)),
     });
     clearTimeout(timer);
 
@@ -51,14 +54,14 @@ async function callClaude(userContent, apiKey) {
     }
 
     const data = await res.json();
-    const summary = data.content?.[0]?.text?.trim() || null;
+    const summary = extractGeminiText(data);
     if (!summary) throw new Error("Empty response from model");
 
     // Validate: must have TL;DR line and at least 2 bullets
     const hasTldr = /^TL;DR:/im.test(summary);
     const bulletCount = (summary.match(/^[•\-\*]/gm) || []).length;
     if (!hasTldr || bulletCount < 2) {
-      console.warn(`[claude] Missing TL;DR or only ${bulletCount} bullets, reformatting`);
+      console.warn(`[gemini] Missing TL;DR or only ${bulletCount} bullets, reformatting`);
       const sentences = summary.split(/(?<=[.!?])\s+/).filter((s) => s.trim());
       if (sentences.length >= 2) {
         const tldr = `TL;DR: ${sentences[0].replace(/^(TL;DR:\s*|[•\-\*]\s*)/i, "")}`;
@@ -75,33 +78,29 @@ async function callClaude(userContent, apiKey) {
 }
 
 export async function fixTruncatedDescription(description, headline) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return description;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetch(GEMINI_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "x-goog-api-key": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: MODEL,
-        system: "You rewrite truncated news descriptions into a single complete sentence. Output ONLY the sentence, nothing else. Keep it factual and under 40 words. No quotes, no markdown.",
-        messages: [
-          { role: "user", content: `Headline: ${headline}\nTruncated description: ${description}` },
-        ],
-        max_tokens: 100,
-      }),
+      body: JSON.stringify(geminiBody(
+        "You rewrite truncated news descriptions into a single complete sentence. Output ONLY the sentence, nothing else. Keep it factual and under 40 words. No quotes, no markdown.",
+        `Headline: ${headline}\nTruncated description: ${description}`,
+        100,
+      )),
     });
     clearTimeout(timer);
     if (!res.ok) return description;
     const data = await res.json();
-    const fixed = data.content?.[0]?.text?.trim();
+    const fixed = extractGeminiText(data);
     return fixed && fixed.length > 20 ? fixed : description;
   } catch {
     clearTimeout(timer);
@@ -110,7 +109,7 @@ export async function fixTruncatedDescription(description, headline) {
 }
 
 export async function deduplicateByContent(newHeadlines, existingHeadlines) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || newHeadlines.length === 0) return [];
 
   const existingList = existingHeadlines.map((h, i) => `E${i}: ${h}`).join("\n");
@@ -119,30 +118,26 @@ export async function deduplicateByContent(newHeadlines, existingHeadlines) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetch(GEMINI_URL, {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+        "x-goog-api-key": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: MODEL,
-        system: `You identify duplicate news articles covering the same story/announcement.
+      body: JSON.stringify(geminiBody(
+        `You identify duplicate news articles covering the same story/announcement.
 Given EXISTING articles (already stored) and NEW articles (candidates), find NEW articles that cover the same story as an EXISTING article OR as another NEW article.
 For NEW-vs-NEW duplicates, keep the one with the lower index.
 Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if no duplicates. No explanation.`,
-        messages: [
-          { role: "user", content: `EXISTING:\n${existingList || "(none)"}\n\nNEW:\n${newList}` },
-        ],
-        max_tokens: 200,
-      }),
+        `EXISTING:\n${existingList || "(none)"}\n\nNEW:\n${newList}`,
+        200,
+      )),
     });
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    const text = data.content?.[0]?.text?.trim() || "[]";
+    const text = extractGeminiText(data) || "[]";
     const match = text.match(/\[[\d,\s]*\]/);
     if (!match) return [];
     const indices = JSON.parse(match[0]);
@@ -154,9 +149,9 @@ Output ONLY a JSON array of NEW indices to REMOVE (e.g. [1,3,5]). Output [] if n
 }
 
 export async function generateSummary(articleText, headline, articleUrl) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn("[claude] No ANTHROPIC_API_KEY set");
+    console.warn("[gemini] No GEMINI_API_KEY set");
     return null;
   }
 
@@ -164,16 +159,16 @@ export async function generateSummary(articleText, headline, articleUrl) {
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const summary = await callClaude(userContent, apiKey);
+      const summary = await callGemini(userContent, apiKey);
       return summary;
     } catch (err) {
-      console.error(`[claude] Attempt ${attempt + 1}/${MAX_RETRIES} failed: ${err.message}`);
+      console.error(`[gemini] Attempt ${attempt + 1}/${MAX_RETRIES} failed: ${err.message}`);
       if (attempt < MAX_RETRIES - 1) {
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
       }
     }
   }
 
-  console.error(`[claude] All ${MAX_RETRIES} attempts failed for "${headline.slice(0, 50)}..."`);
+  console.error(`[gemini] All ${MAX_RETRIES} attempts failed for "${headline.slice(0, 50)}..."`);
   return null;
 }
