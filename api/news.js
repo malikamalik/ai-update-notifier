@@ -1,8 +1,9 @@
-// /api/news — live endpoint that fetches from Bing News RSS,
-// extracts article text, generates AI summaries, and deduplicates by content.
+// /api/news — live endpoint that uses Gemini web research to fetch AI news,
+// enriches with TL;DR summaries and images, deduplicates, and returns JSON.
 
-import { fetchAndFilterArticles, extractArticleText, extractArticleImage } from "./lib/newsCore.js";
-import { generateSummary, fixTruncatedDescription, deduplicateByContent } from "./lib/openrouter.js";
+import { extractArticleImage, detectProvider, isFeatureArticle } from "./lib/newsCore.js";
+import { researchAiNews } from "./lib/geminiResearch.js";
+import { generateSummary, deduplicateByContent } from "./lib/openrouter.js";
 
 const BATCH_SIZE = 5;
 
@@ -19,47 +20,43 @@ async function processInBatches(items, size, fn) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET");
-  res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600"); // 1h cache, 10min stale
+  res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
 
   try {
-    let articles = await fetchAndFilterArticles();
-    console.log(`[news] Fetched ${articles.length} articles`);
+    const researched = await researchAiNews();
+    console.log(`[news] Gemini research returned ${researched.length} articles`);
+
+    // Normalize + filter to tracked providers only
+    const articles = researched
+      .map((a) => ({
+        link: a.url,
+        headline: a.headline,
+        source: a.source || "",
+        provider: detectProvider(a.headline) || detectProvider(a.description) || a.provider || null,
+        date: a.publication_date,
+        description: a.description,
+        summary: a.description,
+      }))
+      .filter((a) => a.provider && a.provider !== "misc")
+      .filter((a) => isFeatureArticle(a.headline, a.description));
+
+    console.log(`[news] ${articles.length} pass feature filter`);
 
     const now = Date.now();
     const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
 
-    // Extract article text, images, and generate AI summaries in batches
+    // Enrich: generate TL;DR + fetch og:image
     const enrichResults = await processInBatches(articles, BATCH_SIZE, async (article) => {
       try {
-        // Extract image and text in parallel
-        const [text, image] = await Promise.all([
-          extractArticleText(article.link).catch(() => null),
+        const [aiSummary, image] = await Promise.all([
+          generateSummary(article.description, article.headline).catch(() => null),
           extractArticleImage(article.link).catch(() => null),
         ]);
-
-        let inputText;
-        if (text) {
-          inputText = text;
-        } else {
-          console.warn(`[news] Using RSS fallback for: ${article.headline.slice(0, 50)}`);
-          inputText = `[Limited content — summarize ONLY what is stated below, do not add any other details]\n\n${article.summary}`;
-        }
-
-        const aiSummary = await generateSummary(inputText, article.headline, article.link);
-        if (aiSummary) {
-          console.log(`[news] AI summary for: ${article.headline.slice(0, 50)}`);
-        }
-        // Fix truncated descriptions
-        let description = article.summary;
-        if (description && (description.endsWith("...") || description.endsWith("\u2026"))) {
-          description = await fixTruncatedDescription(description, article.headline);
-        }
-
-        return { ...article, summary: description, aiSummary: aiSummary || null, image: image || null };
+        return { ...article, aiSummary: aiSummary || null, image: image || null };
       } catch (e) {
         console.warn(`[news] Enrich failed for "${article.headline.slice(0, 40)}": ${e.message}`);
+        return article;
       }
-      return article;
     });
 
     const enrichedArticles = enrichResults
@@ -67,22 +64,22 @@ export default async function handler(req, res) {
       .map((r) => r.value);
 
     const aiCount = enrichedArticles.filter((a) => a.aiSummary).length;
-    console.log(`[news] ${aiCount}/${enrichedArticles.length} articles enriched with AI`);
+    console.log(`[news] ${aiCount}/${enrichedArticles.length} enriched with AI summaries`);
 
-    // Semantic dedup — use AI to remove articles covering the same story/feature
-    const headlines = enrichedArticles.map((a) => a.headline);
-    const toRemove = await deduplicateByContent(headlines, []);
-    let dedupedArticles = enrichedArticles;
-    if (toRemove.length > 0) {
-      const removeSet = new Set(toRemove);
-      dedupedArticles = enrichedArticles.filter((_, i) => !removeSet.has(i));
-      console.log(`[news] Semantic dedup removed ${toRemove.length} duplicate stories`);
+    // Semantic dedup
+    let deduped = enrichedArticles;
+    if (enrichedArticles.length > 0) {
+      const toRemove = await deduplicateByContent(enrichedArticles, []);
+      if (toRemove.length > 0) {
+        const removeSet = new Set(toRemove);
+        deduped = enrichedArticles.filter((_, i) => !removeSet.has(i));
+        console.log(`[news] Semantic dedup removed ${toRemove.length} duplicates`);
+      }
     }
 
-    const results = dedupedArticles.map((a, i) => {
+    const results = deduped.map((a, i) => {
       const dateMs = a.date ? new Date(a.date).getTime() : 0;
-      // Extract TL;DR line from AI summary for the description field
-      let description = a.summary;
+      let description = a.description;
       if (a.aiSummary) {
         const tldrMatch = a.aiSummary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
         if (tldrMatch) description = tldrMatch[1].trim();
@@ -92,7 +89,7 @@ export default async function handler(req, res) {
         provider: a.provider,
         headline: a.headline,
         description,
-        summary: a.aiSummary || a.summary,
+        summary: a.aiSummary || a.description,
         date: a.date || new Date().toISOString().split("T")[0],
         isNew: dateMs > 0 && now - dateMs < THREE_DAYS,
         link: a.link,

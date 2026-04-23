@@ -1,24 +1,24 @@
 // /api/cron/daily-news — runs via external cron trigger (cron-jobs.org).
-// Fetches news, deduplicates against Firestore, extracts article text,
-// generates AI summaries via Gemini, and writes to Firestore.
+// Uses Gemini 3 Flash with Google Search grounding to research AI news, deduplicates
+// against Firestore, generates TL;DR summaries, and writes to the articles collection.
 
 import crypto from "crypto";
 import { db } from "../lib/firestore.js";
-import { fetchAndFilterArticles, extractArticleText, wordOverlap } from "../lib/newsCore.js";
-import { generateSummary, fixTruncatedDescription, deduplicateByContent } from "../lib/openrouter.js";
+import { wordOverlap, detectProvider, isFeatureArticle } from "../lib/newsCore.js";
+import { researchAiNews } from "../lib/geminiResearch.js";
+import { generateSummary, deduplicateByContent } from "../lib/openrouter.js";
 import {
   collection, query, where, getDocs, orderBy, limit,
   doc, writeBatch, serverTimestamp,
 } from "firebase/firestore/lite";
 
-const MAX_DURATION = 55000; // stop processing 5s before Vercel's 60s limit
+const MAX_DURATION = 290000; // stop processing 10s before Vercel's 300s limit
 const BATCH_SIZE = 5;
 
 function urlHash(url) {
   return crypto.createHash("sha256").update(url).digest("hex").slice(0, 20);
 }
 
-// Process items in parallel batches of `size`
 async function processInBatches(items, size, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += size) {
@@ -30,7 +30,7 @@ async function processInBatches(items, size, fn) {
 }
 
 export default async function handler(req, res) {
-  // Verify cron auth — accept Vercel's header OR ?secret= query param (for external triggers)
+  // Cron auth — accept Vercel header OR ?secret= query param (for cron-jobs.org)
   const headerAuth = req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`;
   const queryAuth = req.query.secret === process.env.CRON_SECRET;
   if (!headerAuth && !queryAuth) {
@@ -41,149 +41,122 @@ export default async function handler(req, res) {
   const timeRemaining = () => MAX_DURATION - (Date.now() - startTime);
 
   try {
-    // Step 1: Fetch + filter articles from Bing RSS (retry once if Bing returns nothing)
-    let articles = await fetchAndFilterArticles();
-    if (articles.length === 0 && timeRemaining() > 20000) {
-      console.log("[cron] Bing returned 0 articles, retrying in 3s...");
-      await new Promise((r) => setTimeout(r, 3000));
-      articles = await fetchAndFilterArticles();
-    }
-    console.log(`[cron] Fetched ${articles.length} filtered articles`);
+    // Step 1: Gemini researches live AI news from the web
+    const researched = await researchAiNews();
+    console.log(`[cron] Gemini research returned ${researched.length} articles`);
 
-    if (articles.length === 0) {
-      return res.status(200).json({ status: "ok", processed: 0, skipped: 0 });
+    if (researched.length === 0) {
+      return res.status(200).json({ status: "ok", processed: 0, skipped: 0, reason: "no-articles" });
     }
 
-    // Step 2: Deduplicate against Firestore by URL, headline, and provider
+    // Normalize to internal shape and filter to tracked providers only.
+    const normalized = researched
+      .map((a) => {
+        const detected = detectProvider(a.headline) || detectProvider(a.description);
+        return {
+          link: a.url,
+          headline: a.headline,
+          source: a.source || "",
+          provider: detected || a.provider || null,
+          date: a.publication_date,
+          description: a.description,
+        };
+      })
+      .filter((a) => a.provider && a.provider !== "misc")
+      .filter((a) => isFeatureArticle(a.headline, a.description));
+
+    console.log(`[cron] ${normalized.length} articles pass feature filter`);
+
+    if (normalized.length === 0) {
+      return res.status(200).json({ status: "ok", processed: 0, skipped: researched.length, reason: "no-feature-articles" });
+    }
+
+    // Step 2: Dedup against Firestore (URL + headline+provider overlap)
     const articlesRef = collection(db, "articles");
 
-    // 2a: Exact URL match
-    const urls = articles.map((a) => a.link);
+    // 2a: URL exact match (chunk by 30 — Firestore 'in' limit)
     const existingUrls = new Set();
-    const urlQuery = query(articlesRef, where("url", "in", urls));
-    const urlSnap = await getDocs(urlQuery);
-    urlSnap.forEach((d) => {
-      const data = d.data();
-      if (data.url) existingUrls.add(data.url);
-    });
+    const links = normalized.map((a) => a.link);
+    for (let i = 0; i < links.length; i += 30) {
+      const chunk = links.slice(i, i + 30);
+      if (chunk.length === 0) continue;
+      const urlQuery = query(articlesRef, where("url", "in", chunk));
+      const urlSnap = await getDocs(urlQuery);
+      urlSnap.forEach((d) => {
+        const data = d.data();
+        if (data.url) existingUrls.add(data.url);
+      });
+    }
 
-    // 2b: Fetch recent headlines for headline similarity check
+    // 2b: Headline+provider word overlap against recent 50 docs
     const recentQuery = query(articlesRef, orderBy("createdAt", "desc"), limit(50));
     const recentSnap = await getDocs(recentQuery);
     const recentArticles = recentSnap.docs.map((d) => d.data());
 
-    const newArticles = articles.filter((a) => {
-      // Skip exact URL match
+    const newArticles = normalized.filter((a) => {
       if (existingUrls.has(a.link)) return false;
-      // Skip if a recent Firestore article from the same provider has a similar headline
-      const isDupe = recentArticles.some(
-        (existing) =>
-          existing.provider === a.provider &&
-          wordOverlap(a.headline, existing.headline) >= 0.4
+      const dupe = recentArticles.some(
+        (e) => e.provider === a.provider && wordOverlap(a.headline, e.headline) >= 0.4
       );
-      if (isDupe) {
+      if (dupe) {
         console.log(`[cron] Headline dedup: "${a.headline.slice(0, 50)}..." matches existing`);
       }
-      return !isDupe;
+      return !dupe;
     });
 
-    console.log(`[cron] ${newArticles.length} new, ${articles.length - newArticles.length} already in Firestore`);
+    console.log(`[cron] ${newArticles.length} new, ${normalized.length - newArticles.length} already in Firestore`);
 
     if (newArticles.length === 0) {
-      return res.status(200).json({ status: "ok", processed: 0, skipped: articles.length });
+      return res.status(200).json({ status: "ok", processed: 0, skipped: normalized.length });
     }
 
-    // Step 3: Extract full article text (parallel, batches of 5)
-    if (timeRemaining() < 10000) {
-      console.log("[cron] Low time, skipping extraction");
-      return res.status(200).json({ status: "ok", processed: 0, skipped: articles.length, reason: "timeout" });
+    // Step 3: Generate TL;DR summaries (parallel batches of 5)
+    if (timeRemaining() < 20000) {
+      return res.status(200).json({ status: "ok", processed: 0, skipped: normalized.length, reason: "timeout" });
     }
 
-    const extractResults = await processInBatches(newArticles, BATCH_SIZE, async (article) => {
-      const text = await extractArticleText(article.link);
-      console.log(`[cron] Extract ${article.link.slice(0, 60)}... → ${text ? text.length + " chars" : "FAILED"}`);
-      return { ...article, fullText: text };
+    const summaryResults = await processInBatches(newArticles, BATCH_SIZE, async (a) => {
+      if (timeRemaining() < 10000) return a;
+      const aiSummary = await generateSummary(a.description, a.headline);
+      return { ...a, aiSummary };
     });
 
-    const enrichedArticles = extractResults
+    const enriched = summaryResults
       .filter((r) => r.status === "fulfilled")
       .map((r) => r.value);
 
-    const extracted = enrichedArticles.filter((a) => a.fullText).length;
-    console.log(`[cron] Extracted text for ${extracted}/${enrichedArticles.length} articles`);
-
-    // Step 4: Generate AI summaries (parallel, batches of 5)
-    if (timeRemaining() < 10000) {
-      console.log("[cron] Low time, skipping summary generation");
-      return res.status(200).json({ status: "ok", processed: 0, skipped: articles.length, reason: "timeout" });
-    }
-
-    const summaryResults = await processInBatches(enrichedArticles, BATCH_SIZE, async (article) => {
-      if (timeRemaining() < 5000) return article; // skip if running low
-      const inputText = article.fullText
-        || `Headline: ${article.headline}\nDescription: ${article.summary}`;
-      if (!article.fullText) {
-        console.warn(`[cron] No extracted text for "${article.headline.slice(0, 50)}...", using RSS fallback`);
-      }
-      const aiSummary = await generateSummary(inputText, article.headline, article.link);
-      console.log(`[cron] Summary for "${article.headline.slice(0, 50)}..." → ${aiSummary ? aiSummary.length + " chars" : "FAILED"}`);
-      return { ...article, aiSummary };
-    });
-
-    // Merge AI summaries back
-    for (let i = 0; i < enrichedArticles.length; i++) {
-      const result = summaryResults[i];
-      if (result.status === "fulfilled" && result.value.aiSummary) {
-        enrichedArticles[i].aiSummary = result.value.aiSummary;
-      }
-    }
-
-    // Only keep articles that got an AI summary — never store RSS descriptions
-    let readyArticles = enrichedArticles.filter((a) => a.aiSummary);
-    const dropped = enrichedArticles.length - readyArticles.length;
+    let readyArticles = enriched.filter((a) => a.aiSummary);
+    const dropped = enriched.length - readyArticles.length;
     if (dropped > 0) {
       console.warn(`[cron] Dropped ${dropped} articles without AI summary`);
     }
 
-    // Step 5: Fix truncated RSS descriptions (ending with "...")
-    await processInBatches(readyArticles, BATCH_SIZE, async (article) => {
-      if (article.summary && article.summary.endsWith("...")) {
-        article.summary = await fixTruncatedDescription(article.summary, article.headline);
-        console.log(`[cron] Fixed description for "${article.headline.slice(0, 50)}..."`);
-      }
-    });
-
-    // Step 6: Semantic dedup — remove articles covering the same story (different sources)
-    if (readyArticles.length > 0 && timeRemaining() > 10000) {
-      // Fetch recent headlines from Firestore to compare against
-      const recentQuery = query(articlesRef, orderBy("createdAt", "desc"), limit(50));
-      const recentSnap = await getDocs(recentQuery);
-      const existingHeadlines = recentSnap.docs.map((d) => d.data().headline);
-
-      const newHeadlines = readyArticles.map((a) => a.headline);
-      const toRemove = await deduplicateByContent(newHeadlines, existingHeadlines);
-
+    // Step 4: Semantic dedup via Gemini
+    if (readyArticles.length > 0 && timeRemaining() > 15000) {
+      const toRemove = await deduplicateByContent(readyArticles, recentArticles);
       if (toRemove.length > 0) {
         const removeSet = new Set(toRemove);
         const before = readyArticles.length;
         readyArticles = readyArticles.filter((_, i) => !removeSet.has(i));
-        console.log(`[cron] Semantic dedup removed ${before - readyArticles.length} duplicate stories`);
+        console.log(`[cron] Semantic dedup removed ${before - readyArticles.length} stories`);
       }
     }
 
-    // Step 7: Batch write to Firestore
+    // Step 5: Batch write to Firestore
     const batch = writeBatch(db);
     let processed = 0;
 
     for (const article of readyArticles) {
       const docId = urlHash(article.link);
       const ref = doc(db, "articles", docId);
-      // Extract TL;DR line from AI summary for the description field
-      let description = article.summary;
+
+      // Use TL;DR line of AI summary as description
+      let description = article.description;
       if (article.aiSummary) {
         const tldrMatch = article.aiSummary.match(/^TL;?DR:?\s*(.+?)(?:\n|$)/i);
         if (tldrMatch) description = tldrMatch[1].trim();
       }
+
       batch.set(ref, {
         url: article.link,
         headline: article.headline,
@@ -203,7 +176,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       status: "ok",
       processed,
-      skipped: articles.length - newArticles.length,
+      skipped: normalized.length - newArticles.length,
       dropped,
       elapsed: Date.now() - startTime,
     });

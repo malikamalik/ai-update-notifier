@@ -33,21 +33,35 @@ export const QUERIES = [
 
 // ── Provider detection ──────────────────────────────────────────────
 const PROVIDER_MATCHERS = [
-  { provider: "openai", keywords: ["chatgpt", "openai", "gpt-5", "gpt-4", "codex", "dall-e"] },
-  { provider: "anthropic", keywords: ["claude", "anthropic"] },
+  { provider: "openai", keywords: ["chatgpt", "openai", "gpt-5", "gpt-4", "codex", "dall-e", "sora"] },
+  { provider: "anthropic", keywords: ["claude", "anthropic", "claude code", "claude cowork"] },
   { provider: "gemini", keywords: ["gemini"] },
-  { provider: "google", keywords: ["google ai", "google deepmind", "gemma"] },
+  { provider: "google", keywords: ["google ai", "google deepmind", "gemma", "notebooklm", "imagen", "veo"] },
   { provider: "deepseek", keywords: ["deepseek"] },
   { provider: "kimi", keywords: ["kimi", "moonshot ai", "moonshot"] },
   { provider: "meta", keywords: ["llama", "meta ai"] },
   { provider: "xai", keywords: ["grok", "xai", "x.ai"] },
   { provider: "mistral", keywords: ["mistral"] },
-  { provider: "microsoft", keywords: ["copilot", "microsoft ai"] },
+  { provider: "microsoft", keywords: ["copilot", "microsoft ai", "github copilot"] },
   { provider: "perplexity", keywords: ["perplexity"] },
   { provider: "figma", keywords: ["figma"] },
   { provider: "adobe", keywords: ["adobe firefly", "adobe ai"] },
   { provider: "midjourney", keywords: ["midjourney"] },
   { provider: "uxpilot", keywords: ["ux pilot", "uxpilot"] },
+  { provider: "runway", keywords: ["runway ml", "runwayml", "runway gen-"] },
+  { provider: "elevenlabs", keywords: ["elevenlabs", "eleven labs"] },
+  { provider: "heygen", keywords: ["heygen"] },
+  { provider: "canva", keywords: ["canva"] },
+  { provider: "julius", keywords: ["julius ai", "julius.ai"] },
+  { provider: "gamma", keywords: ["gamma ai", "gamma.app"] },
+  { provider: "n8n", keywords: ["n8n"] },
+  { provider: "replit", keywords: ["replit", "replit agent"] },
+  { provider: "lovable", keywords: ["lovable.dev", "lovable ai"] },
+  { provider: "wispr", keywords: ["wispr flow", "wispr"] },
+  { provider: "huggingface", keywords: ["hugging face", "huggingface"] },
+  { provider: "stability", keywords: ["stability ai", "stable diffusion"] },
+  { provider: "cohere", keywords: ["cohere"] },
+  { provider: "cursor", keywords: ["cursor ide", "cursor agent", "cursor ai"] },
 ];
 
 export function detectProvider(title) {
@@ -451,82 +465,45 @@ export async function extractArticleImage(url) {
   }
 }
 
-// ── Google News RSS parsing ─────────────────────────────────────────
-function parseGoogleRss(xml) {
-  const items = [];
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-  let match;
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1];
-    const title = decodeEntities(extractTag(block, "title"));
-    const link = extractTag(block, "link");
-    const rawPubDate = extractTag(block, "pubDate");
-    const source = extractTag(block, "source") || "";
-    // Google News description is HTML — extract text
-    const rawDesc = extractTag(block, "description");
-    const description = decodeEntities(rawDesc.replace(/<[^>]*>/g, "").trim());
-
-    items.push({ title, link, description, pubDate: formatDate(rawPubDate), source });
-  }
-  return items;
-}
-
 // ── Fetch + filter pipeline ─────────────────────────────────────────
 export async function fetchAndFilterArticles() {
-  // Fetch from both Bing and Google News in parallel
-  const [bingResults, googleResults] = await Promise.all([
-    // Bing News RSS
-    Promise.all(
-      QUERIES.map(async (q) => {
-        const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=15&mkt=en-US`;
-        try {
-          const r = await fetch(url, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
-          });
-          if (!r.ok) return [];
-          return parseBingRss(await r.text());
-        } catch {
-          return [];
-        }
-      })
-    ),
-    // Google News RSS
-    Promise.all(
-      QUERIES.map(async (q) => {
-        const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q + " when:3d")}&hl=en-US&gl=US&ceid=US:en`;
-        try {
-          const r = await fetch(url, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
-          });
-          if (!r.ok) return [];
-          return parseGoogleRss(await r.text());
-        } catch {
-          return [];
-        }
-      })
-    ),
-  ]);
-
-  const allRssResults = [...bingResults, ...googleResults];
+  // Fetch from Bing News RSS
+  const bingResults = await Promise.all(
+    QUERIES.map(async (q) => {
+      const url = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&count=15&mkt=en-US`;
+      try {
+        const r = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; AIUpdateNotifier/1.0)" },
+        });
+        if (!r.ok) return [];
+        return parseBingRss(await r.text());
+      } catch {
+        return [];
+      }
+    })
+  );
 
   let articles = [];
-  for (const items of allRssResults) {
+  for (const items of bingResults) {
     for (const item of items) {
       if (item.link.includes("msn.com")) continue;
-      // Resolve Google News redirect URLs
+      if (item.link.includes("news.google.com")) continue;
       let link = item.link;
-      if (link.includes("news.google.com/rss/articles/")) {
-        // Google News wraps URLs — keep as-is, they redirect
-      }
 
       const provider = detectProvider(item.title);
       if (!provider) continue;
       if (!isFeatureArticle(item.title, item.description)) continue;
 
-      // Strip source suffixes: " - Source", " | Source", " — Source"
+      // Strip source suffixes: " - Source", " | Source", " — Source", domains, hashes
       const headline = item.title
-        .replace(/\s+[-–—|]\s+[A-Z][\w\s.&',]+$/, "")
+        .replace(/\s+[-–—|]\s+.+$/, "")     // strip everything after last separator
+        .replace(/\s*\[\w+\]\s*$/, "")       // strip trailing [hash] like [85ed50]
+        .replace(/\s+\S+\.\S+\s*$/, "")      // strip trailing domains (word.word)
         .trim();
+
+      // Skip non-English articles
+      if (/[^\x00-\x7F]{3,}/.test(headline)) continue;
+
       const summary = cleanSummary(item.description);
       if (!summary) continue;
 
